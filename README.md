@@ -29,13 +29,13 @@ Sets creator and copyright metadata on images using MWG (Metadata Working Group)
 
 **Parameters:**
 - `-Name` (required): Creator/author name
-- `-FilePath` (required): Directory containing images
+- `-Filepath` (required): Directory containing images
 - `-Year` (optional): Copyright year (defaults to current year)
 - `-Recurse` (optional): Process subdirectories recursively
 
 **Example:**
 ```powershell
-.\Set-CreatorAndCopyright.ps1 -Name "Jane Doe" -FilePath "C:\Photos" -Recurse
+.\Set-CreatorAndCopyright.ps1 -Name "Jane Doe" -Filepath "C:\Photos" -Recurse
 ```
 
 **Supported Formats:** JPG, JPEG, PNG, TIF, TIFF, HEIC, HEIF
@@ -47,7 +47,7 @@ Sets creator and copyright metadata on images using MWG (Metadata Working Group)
 Assigns random dashless GUIDs to the ImageUniqueID EXIF tag, skipping files that already have a unique ID.
 
 **Parameters:**
-- `-Path` (required): Directory containing images
+- `-Filepath` (required): Directory containing images
 - `-Extensions` (optional): File extensions to process (default: `@("jpg")`)
 - `-Recurse` (optional): Process subdirectories recursively
 

@@ -2,7 +2,7 @@
 .SYNOPSIS
     Adds a dashless GUID to the ImageUniqueID tag of image files (using ExifTool).
 
-.PARAMETER Path
+.PARAMETER Filepath
     The folder path containing image files.
 
 .PARAMETER Extensions
@@ -17,7 +17,7 @@
 
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Path,
+    [string]$Filepath,
 
     [string[]]$Extensions = @("jpg"),
 
@@ -29,15 +29,15 @@ $ErrorActionPreference = "Stop"
 
 try {
     # Validate input path
-    if (-not (Test-Path -LiteralPath $Path)) {
+    if (-not (Test-Path -LiteralPath $Filepath)) {
         throw "ERROR: The path '$Path' does not exist."
     }
 
     # Build search parameters
-    $searchParams = @{
-        Path    = $Path
-        File    = $true
-        Recurse = $Recurse.IsPresent
+    $searchParams   = @{
+        Path    = $Filepath
+        File        = $true
+        Recurse     = $Recurse.IsPresent
     }
 
     # Collect files

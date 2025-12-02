@@ -3,7 +3,7 @@ param(
     [string]$Name,
 
     [Parameter(Mandatory = $true)]
-    [string]$FilePath,
+    [string]$Filepath,
 
     [int]$Year = (Get-Date).Year,
 
@@ -17,8 +17,8 @@ if (-not (Get-Command $exiftool -ErrorAction SilentlyContinue)) {
     throw "ExifTool not found. Ensure it is installed and in your PATH."
 }
 
-if (-not (Test-Path $FilePath)) {
-    throw "The specified path does not exist: $FilePath"
+if (-not (Test-Path $Filepath)) {
+    throw "The specified path does not exist: $Filepath"
 }
 
 # Build copyright
@@ -31,11 +31,11 @@ Write-Host ""
 
 # --- discover files reliably ---
 $extensions = @(".jpg",".jpeg",".png",".tif",".tiff",".heic",".heif")
-$files = Get-ChildItem -Path $FilePath -File -Recurse:$Recurse -ErrorAction SilentlyContinue |
+$files = Get-ChildItem -Path $Filepath -File -Recurse:$Recurse -ErrorAction SilentlyContinue |
          Where-Object { $extensions -contains $_.Extension.ToLower() }
 
 if ($files.Count -eq 0) {
-    Write-Host "No image files found in: $FilePath"
+    Write-Host "No image files found in: $Filepath"
     exit
 }
 
