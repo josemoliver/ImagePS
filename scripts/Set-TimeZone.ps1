@@ -42,14 +42,14 @@ $targetFiles = Join-Path -Path $Filepath -ChildPath "*.jpg"
 
 # Build exiftool command
 $exifCommand = @(
-    "exiftool",
+    'exiftool',
     $targetFiles,
-    ('"-OffsetTime*=' + $Timezone + '"'),
-    ('"-XMP-photoshop:DateCreated<${XMP-photoshop:DateCreated}s' + $Timezone + '"'),
-    ('"-XMP-xmp:CreateDate<${XMP-xmp:CreateDate}s' + $Timezone + '"'),
-    ('"-XMP-exif:DateTimeOriginal<${XMP-exif:DateTimeOriginal}s' + $Timezone+ '"'),
-    "-overwrite_original"
-) -join " "
+    ("'-OffsetTime*=$Timezone'"),
+    ("'-XMP-photoshop:DateCreated<`${XMP-photoshop:DateCreated}s$Timezone'"),
+    ("'-XMP-xmp:CreateDate<`${XMP-xmp:CreateDate}s$Timezone'"),
+    ("'-XMP-exif:DateTimeOriginal<`${XMP-exif:DateTimeOriginal}s$Timezone'"),
+    '-overwrite_original'
+) -join ' '
 
 Write-Output "Running command: $exifCommand"
 Invoke-Expression $exifCommand
