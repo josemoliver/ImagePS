@@ -1,0 +1,51 @@
+[
+  {
+    "Make": "Canon",
+    "Model": "Canon EOS REBEL T3i",
+    "LensId": "Canon EF-S 55-250mm f/4-5.6 IS STM",
+    "LensModel": "EF-S 55-250mm f/4-5.6 IS STM",
+    "LensManufacturer": "Canon"
+  },
+  {
+    "Make": "Canon",
+    "Model": "*",
+    "LensId": "170-500mm F5-6.3 DG APO",
+    "LensModel": "170-500mm F5-6.3 DG APO",
+    "LensManufacturer": "Sigma"
+  },
+  {
+    "Make": "Canon",
+    "Model": "*",
+    "LensId": "17-50mm f/2.8 XR Di II",
+    "LensModel": "17-50mm f/2.8 XR Di II",
+    "LensManufacturer": "Tamron"
+  },
+ {
+    "Make": "Canon",
+    "Model": "*",
+    "LensId": "EF-S18-55mm f/3.5-5.6",
+    "LensModel": "EF-S18-55mm f/3.5-5.6",
+    "LensManufacturer": "Canon"
+  },
+  {
+    "Make": "Canon",
+    "Model": "*",
+    "LensId": "200",
+    "LensModel": "EF75-300mm f/4-5.6 USM",
+    "LensManufacturer": "Canon"
+  },
+ {
+    "Make": "Canon",
+    "Model": "*",
+    "LensId": "29",
+    "LensModel": "EF50mm f/1.8 II",
+    "LensManufacturer": "Canon"
+  },
+   {
+    "Make": "Canon",
+    "Model": "*",
+    "LensId": "EF50mm f/1.8 II",
+    "LensModel": "EF50mm f/1.8 II",
+    "LensManufacturer": "Canon"
+  }
+]
