@@ -6,7 +6,7 @@ ImagePS is a PowerShell utility collection for automating photo metadata operati
 ## Architecture & Components
 
 ### Core Scripts
-- **`Set-CreatorAndCopyright.ps1`**: Sets MWG creator/copyright tags via ExifTool args file (UTF-8 without BOM)
+- **`Set-Rights.ps1`**: Sets MWG creator/copyright tags via ExifTool args file (UTF-8 without BOM)
 - **`Set-ImageUniqueID.ps1`**: Assigns random GUIDs (dashless format) to ImageUniqueID tag, skipping existing
 - **`Set-TimeZone.ps1`**: Updates timezone offset metadata across XMP and EXIF datetime fields
 
@@ -16,7 +16,7 @@ ImagePS is a PowerShell utility collection for automating photo metadata operati
 All scripts invoke ExifTool as external process. Key patterns:
 - Use `-overwrite_original` flag for in-place edits
 - Charset declarations for UTF-8 support: `-charset filename=utf8`, `-charset exif=utf8`, etc.
-- Args file approach (`.txt` file with arguments) for complex metadata sets - see `Set-CreatorAndCopyright.ps1`
+- Args file approach (`.txt` file with arguments) for complex metadata sets - see `Set-Rights.ps1`
 - Tag format: `OffsetTime*`, `XMP-photoshop:DateCreated`, `XMP-xmp:CreateDate`, `ImageUniqueID`, `mwg:creator`
 
 #### 2. **File Discovery & Filtering**
@@ -99,5 +99,5 @@ Prevents encoding issues with international character sets in metadata.
 
 - Preserve parameter validation order (path validation → tool validation → input validation)
 - Add progress indication for loops processing >20 files
-- Clean up temporary files in `finally` blocks (see args file cleanup in `Set-CreatorAndCopyright.ps1`)
+- Clean up temporary files in `finally` blocks (see args file cleanup in `Set-Rights.ps1`)
 - Document mandatory parameters and expected formats in comment headers

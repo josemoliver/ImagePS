@@ -21,8 +21,8 @@ if (-not (Test-Path $Filepath)) {
     throw "The specified path does not exist: $Filepath"
 }
 
-# Build copyright
-$copyright = "© Copyright $Year $Name. All Rights Reserved."
+# Build copyright - Example: © Copyright 2025 Jane Doe. All rights reserved.
+$copyright = "© Copyright $Year $Name. All rights reserved"
 
 Write-Host "Creator:   $Name"
 Write-Host "Year:      $Year"

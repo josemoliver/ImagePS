@@ -23,7 +23,7 @@ ImagePS is a collection of PowerShell utilities designed to batch process image 
 
 ## Scripts
 
-### Set-CreatorAndCopyright.ps1
+### Set-Rights.ps1
 
 Sets creator and copyright metadata on images using MWG (Metadata Working Group) standards.
 
@@ -35,7 +35,7 @@ Sets creator and copyright metadata on images using MWG (Metadata Working Group)
 
 **Example:**
 ```powershell
-.\Set-CreatorAndCopyright.ps1 -Name "Jane Doe" -Filepath "C:\Photos" -Recurse
+.\Set-Rights.ps1 -Name "Jane Doe" -Filepath "C:\Photos" -Recurse
 ```
 
 **Supported Formats:** JPG, JPEG, PNG, TIF, TIFF, HEIC, HEIF
@@ -92,7 +92,7 @@ Updates timezone offset metadata across EXIF and XMP datetime fields. Useful for
 
 2. **Run desired script:**
 	```powershell
-	pwsh -File Set-CreatorAndCopyright.ps1 -Name "Your Name" -FilePath "C:\Photos" -Recurse
+	pwsh -File Set-Rights.ps1 -Name "Your Name" -FilePath "C:\Photos" -Recurse
 	```
 
 3. **Verify changes:**
