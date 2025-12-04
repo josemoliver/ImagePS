@@ -1,183 +1,203 @@
 <#
 .SYNOPSIS
-    Set-WeatherTags.ps1
-    Optimized WeatherTag replication in PowerShell.
+    Annotates image files with weather readings based on EXIF CreateDate.
 
 .DESCRIPTION
-    Reads weatherhistory.csv containing weather readings and matches them
-    to photo timestamps. Writes AmbientTemperature, Humidity, and Pressure
-    into EXIF metadata using exiftool.exe. Optimized for performance and
-    pipeline use.
+    Reads a weatherhistory.csv file containing weather readings (DateTime, Temperature, Humidity, Pressure).
+    Matches each image's EXIF CreateDate to the nearest weather reading and writes the values back to the image metadata using exiftool.
+
+.PARAMETER FilePath
+    Path to the folder containing image files (.jpg, .jpeg, .heic).
 
 .PARAMETER Write
-    Write matched weather tags back to photo metadata.
+    Switch to enable writing weather tags into image metadata. Without this, only preview is shown.
 
-.PARAMETER Overwrite
-    Overwrite original files when writing metadata.
-
-.EXAMPLE
-    .\Set-WeatherTags.ps1
-    Preview tags without writing.
+.PARAMETER Threshold
+    Maximum difference in minutes allowed between photo time and weather reading.
+    Defaults to 30 minutes if not specified.
 
 .EXAMPLE
-    .\Set-WeatherTags.ps1 -Write -Overwrite
-    Write tags and overwrite originals.
+    PS> .\Set-WeatherTags.ps1 -FilePath "C:\Photos" -Write -Threshold 15
+
+.NOTES
+    Author: Adapted from José Oliver-Didier's WeatherTag (C#)
 #>
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $true, Position = 0)]
+    [ValidateScript({ Test-Path $_ -PathType Container })]
+    [string]$FilePath,
+
     [switch]$Write,
-    [switch]$Overwrite,
-    [string]$WeatherFile = "weatherhistory.csv"
+
+    [int]$Threshold = 30
 )
 
-function Check-Exiftool {
-    try {
-        $output = & exiftool.exe -ver 2>$null
-        if ($LASTEXITCODE -eq 0 -and $output) {
-            return [double]$output
-        }
-        else { return 0 }
+# --- Helper classes and functions ---
+
+class WeatherReading {
+    [datetime]$ReadingDate
+    [Nullable[Double]]$AmbientTemperature
+    [Nullable[Double]]$Humidity
+    [Nullable[Double]]$Pressure
+
+    WeatherReading([datetime]$date, [Nullable[Double]]$temp, [Nullable[Double]]$hum, [Nullable[Double]]$press) {
+        $this.ReadingDate = $date
+        $this.AmbientTemperature = $temp
+        $this.Humidity = $hum
+        $this.Pressure = $press
     }
-    catch { return 0 }
 }
 
-function Remove-NonNumeric([string]$input) {
-    return ($input -replace '[^0-9\.\-]', '')
+function Get-ExiftoolVersion {
+    try {
+        $version = & exiftool.exe -ver
+        return [double]$version
+    } catch {
+        Write-Error "Exiftool not found. Please install exiftool.exe and ensure it's in PATH."
+        exit 1
+    }
 }
 
-# Hard-coded ranges
-$ranges = @{
-    TempMin = -100; TempMax = 150
-    HumMin  = 0;    HumMax  = 100
-    PressMin= 800;  PressMax= 1100
+function Parse-ExifDate {
+    param([string]$Raw)
+    if ($Raw -match '^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$') {
+        return [datetime]::ParseExact(
+            $Raw,
+            'yyyy:MM:dd HH:mm:ss',
+            [System.Globalization.CultureInfo]::InvariantCulture
+        )
+    }
+    try { return [datetime]::Parse($Raw, [System.Globalization.CultureInfo]::InvariantCulture) }
+    catch { return $null }
 }
 
-# Verify exiftool
-$version = Check-Exiftool
-if ($version -eq 0) {
-    Write-Error "Exiftool not found! WeatherTag requires exiftool.exe."
-    exit
-}
-else {
-    Write-Verbose "Exiftool version $version"
+function Get-ImageDates {
+    param([string[]]$Files)
+
+    $json = & exiftool.exe -CreateDate -DateTimeOriginal -mwg -json $Files
+    $data = $json | ConvertFrom-Json
+
+    return $data | ForEach-Object {
+        $raw = $_.DateTimeOriginal
+        if (-not $raw) { $raw = $_.CreateDate }
+
+        $photoDate = Parse-ExifDate -Raw $raw
+
+        [PSCustomObject]@{
+            File       = $_.SourceFile
+            CreateDate = $photoDate
+            RawCreate  = $raw
+        }
+    }
 }
 
-# Find image files
-$imageFiles = Get-ChildItem -File | Where-Object {
-    $_.Extension -match '^\.(jpg|jpeg|heic)$'
+function Import-WeatherHistory {
+    param([string]$CsvPath)
+
+    if (-not (Test-Path $CsvPath)) { throw "Weather history file not found: $CsvPath" }
+
+    $readings = @()
+    Import-Csv $CsvPath -Header Date,Time,Temp,Humidity,Pressure | ForEach-Object {
+        $rawDate = "$($_.Date) $($_.Time)".Trim()
+        $parsed = $null
+        try { $parsed = [datetime]::Parse($rawDate, [System.Globalization.CultureInfo]::InvariantCulture) } catch { $parsed = $null }
+
+        $temp = try {
+            $v = [double]($_.Temp -replace '[^\d\.\-]')
+            if ($v -lt -100 -or $v -gt 150) { $null } else { $v }
+        } catch { $null }
+
+        $hum = try {
+            $v = [double]($_.Humidity -replace '[^\d\.\-]')
+            if ($v -lt 0 -or $v -gt 100) { $null } else { $v }
+        } catch { $null }
+
+        $press = try {
+            $v = [double]($_.Pressure -replace '[^\d\.\-]')
+            if ($v -lt 800 -or $v -gt 1100) { $null } else { $v }
+        } catch { $null }
+
+        if ($parsed) {
+            $readings += [WeatherReading]::new($parsed, $temp, $hum, $press)
+        }
+    }
+    $readings | Sort-Object ReadingDate
 }
+
+function Find-NearestWeather {
+    param(
+        [datetime]$PhotoDate,
+        [WeatherReading[]]$Readings,
+        [int]$ThresholdMinutes = 30
+    )
+
+    if (-not $PhotoDate -or -not $Readings -or $Readings.Count -eq 0) { return $null }
+
+    $nearest = $Readings |
+        Sort-Object { [math]::Abs(($_.ReadingDate - $PhotoDate).TotalMinutes) } |
+        Select-Object -First 1
+
+    if (-not $nearest) { return $null }
+
+    $delta = [math]::Abs(($nearest.ReadingDate - $PhotoDate).TotalMinutes)
+    if ($delta -le $ThresholdMinutes) { return $nearest } else { return $null }
+}
+
+function Write-WeatherTags {
+    param(
+        [string]$File,
+        [WeatherReading]$Reading
+    )
+
+    $args = @()
+    if ($Reading.AmbientTemperature) { $args += "-AmbientTemperature=$($Reading.AmbientTemperature)" }
+    if ($Reading.Humidity)           { $args += "-Humidity=$($Reading.Humidity)" }
+    if ($Reading.Pressure)           { $args += "-Pressure=$($Reading.Pressure)" }
+
+    # Always overwrite original file
+    $args += "-overwrite_original"
+
+    if ($args.Count -gt 0) {
+        & exiftool.exe $File @args | Out-Null
+    }
+}
+
+# --- Main Execution ---
+
+$version = Get-ExiftoolVersion
+Write-Verbose "Exiftool version $version detected."
+
+$imageFiles = Get-ChildItem -Path $FilePath -Recurse -File |
+    Where-Object { $_.Extension -match '^\.(jpg|jpeg|heic)$' }
+
 if (-not $imageFiles) {
-    Write-Error "No supported image files found."
-    exit
+    Write-Error "No supported image files found in $FilePath"
+    exit 1
 }
 
-# Load weather history
-if (-not (Test-Path $WeatherFile)) {
-    Write-Error "$WeatherFile not found."
-    exit
-}
+$imageDates = Get-ImageDates -Files $imageFiles.FullName
 
-$readings = @()
-Import-Csv $WeatherFile -Header Date,Time,Temp,Humidity,Pressure | ForEach-Object {
-    $dateWeatherReading = [datetime]"$($_.Date) $($_.Time)"
+$weatherFile = Join-Path $FilePath 'weatherhistory.csv'
+$readings = Import-WeatherHistory -CsvPath $weatherFile
 
-    $ambient = $null
-    $humidity = $null
-    $pressure = $null
+foreach ($img in $imageDates) {
+    $nearest = Find-NearestWeather -PhotoDate $img.CreateDate -Readings $readings -ThresholdMinutes $Threshold
 
-    try {
-        $val = [double](Remove-NonNumeric $_.Temp)
-        if ($val -ge $ranges.TempMin -and $val -le $ranges.TempMax) { $ambient = $val }
-    } catch {}
+    $result = [PSCustomObject]@{
+        File               = $img.File
+        PhotoDate          = $img.CreateDate
+        ReadingDate        = if ($nearest) { $nearest.ReadingDate } else { $null }
+        AmbientTemperature = if ($nearest) { $nearest.AmbientTemperature } else { $null }
+        Humidity           = if ($nearest) { $nearest.Humidity } else { $null }
+        Pressure           = if ($nearest) { $nearest.Pressure } else { $null }
+        Status             = if ($nearest) { 'Matched' } else { 'NoReadingWithinThreshold' }
+    }
 
-    try {
-        $val = [double](Remove-NonNumeric $_.Humidity)
-        if ($val -ge $ranges.HumMin -and $val -le $ranges.HumMax) { $humidity = $val }
-    } catch {}
+    $result
 
-    try {
-        $val = [double](Remove-NonNumeric $_.Pressure)
-        if ($val -ge $ranges.PressMin -and $val -le $ranges.PressMax) { $pressure = $val }
-    } catch {}
-
-    $readings += [pscustomobject]@{
-        ReadingDate       = $dateWeatherReading
-        AmbientTemperature= $ambient
-        Humidity          = $humidity
-        Pressure          = $pressure
+    if ($Write -and $nearest) {
+        Write-WeatherTags -File $img.File -Reading $nearest
     }
 }
-
-# Batch query photo dates
-$json = & exiftool.exe ($imageFiles.FullName) -CreateDate -mwg -json
-$photoDates = $json | ConvertFrom-Json
-
-# Process each image
-$results = foreach ($img in $imageFiles) {
-    $photoInfo = $photoDates | Where-Object { $_.SourceFile -eq $img.FullName }
-    $photoDate = $null
-    if ($photoInfo.CreateDate) {
-        $parts = $photoInfo.CreateDate.Trim().Split(' ')
-        $date = $parts[0] -replace ":", "/"
-        $time = $parts[1]
-        $photoDate = [datetime]("$date $time")
-    }
-
-    $closest = $null
-    $minDiff = 30
-    if ($photoDate) {
-        foreach ($r in $readings) {
-            $diff = ($photoDate - $r.ReadingDate).TotalMinutes
-            if ([math]::Abs($diff) -lt $minDiff) {
-                $closest = $r
-                $minDiff = [math]::Abs($diff)
-            }
-        }
-    }
-
-    if ($closest -and $minDiff -lt 30) {
-        if ($Write) {
-            $args = @()
-            if ($closest.AmbientTemperature) { $args += "-`"AmbientTemperature=$($closest.AmbientTemperature)`"" }
-            if ($closest.Humidity)           { $args += "-`"Humidity=$($closest.Humidity)`"" }
-            if ($closest.Pressure)           { $args += "-`"Pressure=$($closest.Pressure)`"" }
-            if ($Overwrite)                  { $args += "-overwrite_original" }
-
-            $cmd = @($img.FullName) + $args
-            $output = & exiftool.exe @cmd
-            [pscustomobject]@{
-                File   = $img.Name
-                Date   = $photoDate
-                Temp   = $closest.AmbientTemperature
-                Hum    = $closest.Humidity
-                Press  = $closest.Pressure
-                Status = "Written"
-                Output = $output
-            }
-        }
-        else {
-            [pscustomobject]@{
-                File   = $img.Name
-                Date   = $photoDate
-                Temp   = $closest.AmbientTemperature
-                Hum    = $closest.Humidity
-                Press  = $closest.Pressure
-                Status = "Preview"
-            }
-        }
-    }
-    else {
-        [pscustomobject]@{
-            File   = $img.Name
-            Date   = $photoDate
-            Temp   = $null
-            Hum    = $null
-            Press  = $null
-            Status = if (-not $photoDate) { "NoDate" } else { "NoReading" }
-        }
-    }
-}
-
-# Output results to pipeline
-$results
