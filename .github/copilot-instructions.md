@@ -9,6 +9,9 @@ ImagePS is a PowerShell utility collection for automating photo metadata operati
 - **`Set-Rights.ps1`**: Sets MWG creator/copyright tags via ExifTool args file (UTF-8 without BOM)
 - **`Set-ImageUniqueID.ps1`**: Assigns random GUIDs (dashless format) to ImageUniqueID tag, skipping existing
 - **`Set-TimeZone.ps1`**: Updates timezone offset metadata across XMP and EXIF datetime fields
+- **`Set-GeoTag.ps1`**: Assigns GPS coordinates to images based on external CSV file lookup
+- **`Set-Lens.ps1`**: Injects lens metadata into images, supporting multiple lens formats
+- **`Set-WeatherTags.ps1`**: Tags images with weather conditions from external API lookup
 
 ### Key Design Patterns
 
@@ -61,11 +64,16 @@ Use `-Recurse` switch consistently for batch operations.
 - `-Recurse`: Switch for nested directories
 - `-Name`: Creator/author name
 - `-Extensions`: Array of file extensions (without dots initially, scripts handle normalization)
+- `-GeoData`: Path to external CSV file for geotagging
+- `-LensData`: Lens information string or file path
+- `-WeatherAPI`: Weather data source API URL
 
 ### Metadata Tag Conventions
 - **MWG tags**: `mwg:creator`, `mwg:copyright` (unified standard)
 - **XMP paths**: Full namespace paths like `XMP-photoshop:DateCreated`
 - **EXIF**: `ImageUniqueID`, `OffsetTime*` (wildcard for variants)
+- **GPS tags**: `GPSLatitude`, `GPSLongitude`, `GPSLatitudeRef`, `GPSLongitudeRef`
+- **Weather tags**: Custom tags as defined by external API response
 
 ### UTF-8 Handling
 Create args files as UTF-8 without BOM:
@@ -87,6 +95,11 @@ Prevents encoding issues with international character sets in metadata.
 - **Supported**: JPG, JPEG, PNG, TIF, TIFF, HEIC, HEIF
 - **Metadata preservation**: ExifTool preserves all metadata by default with `-overwrite_original`
 
+### External Data Files
+- **Geotagging**: CSV file with latitude/longitude data, header row optional
+- **Lens data**: Can be embedded string or external file, format consistent with lens metadata standards
+- **Weather data**: Fetched from API, requires internet access and valid API URL
+
 ## Common Gotchas
 
 1. **ExifTool not found**: Script exits with `exit 1` - check PATH before running
@@ -94,6 +107,7 @@ Prevents encoding issues with international character sets in metadata.
 3. **UTF-8 BOM issues**: Windows PowerShell defaults to UTF-16 LE; use `UTF8Encoding($false)` explicitly
 4. **Blank timezone input**: `Set-TimeZone.ps1` falls back to local system timezone if `-Timezone` is empty string
 5. **File globbing**: Use `Join-Path` to build patterns (e.g., `*.jpg`) to avoid issues on non-Windows systems
+6. **Dry-run mode**: Use `-DryRun` switch to preview changes without writing to files
 
 ## When Enhancing Scripts
 
@@ -101,3 +115,4 @@ Prevents encoding issues with international character sets in metadata.
 - Add progress indication for loops processing >20 files
 - Clean up temporary files in `finally` blocks (see args file cleanup in `Set-Rights.ps1`)
 - Document mandatory parameters and expected formats in comment headers
+- Consider adding `-WhatIf` or `-DryRun` parameters for non-destructive testing of new features
