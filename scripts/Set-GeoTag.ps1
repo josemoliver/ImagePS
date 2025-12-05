@@ -184,92 +184,173 @@ function Find-NearestLocation {
 }
 
 function Write-MetadataRule1 {
-  param(
-    [string]$Path,
-    [object]$Nearest
-  )
-  $args = @(
-  '-overwrite_original',
-  '-charset','Filename=UTF8',
-  '-charset','EXIF=UTF8',
-  '-charset','IPTC=UTF8',
-  '-charset','XMP=UTF8',
+    param(
+        [string]$Path,
+        [object]$Nearest
+    )
 
-    # IPTC legacy tags
-    ('-IPTC:Sub-location=' + $Nearest.Location),
-    ('-IPTC:City=' + $Nearest.City),
-    ('-IPTC:Province-State=' + $Nearest.StateProv),
-    ('-IPTC:Country-PrimaryLocationName=' + $Nearest.Country),
-    ('-IPTC:Country-PrimaryLocationCode=' + $Nearest.CountryCode),
+    # Create a UTF-8 (no BOM) encoder for ExifTool argument file
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $tempFile = [System.IO.Path]::GetTempFileName()
 
-    # XMP-iptcCore tags
-    ('-XMP-iptcCore:Location=' + $Nearest.Location),
-    ('-XMP-iptcCore:CountryCode=' + $Nearest.CountryCode),
+    $lines = @(
+        '-overwrite_original',
+        '-charset', 'Filename=UTF8',
+        '-charset', 'EXIF=UTF8',
+        '-charset', 'IPTC=UTF8',
+        '-charset', 'XMP=UTF8'
+    )
 
-    # XMP-photoshop tags
-    ('-XMP-photoshop:City=' + $Nearest.City),
-    ('-XMP-photoshop:State=' + $Nearest.StateProv),
-    ('-XMP-photoshop:Country=' + $Nearest.Country),
+    #
+    # --- IPTC Legacy Tags (ISO-8859-1 internally) ---
+    #
+    $lines += @(
+        "-IPTC:Sub-location=$($Nearest.Location)",
+        "-IPTC:City=$($Nearest.City)",
+        "-IPTC:Province-State=$($Nearest.StateProv)",
+        "-IPTC:Country-PrimaryLocationName=$($Nearest.Country)",
+        "-IPTC:Country-PrimaryLocationCode=$($Nearest.CountryCode)"
+    )
 
-    # XMP-iptcExt tags
-    ('-XMP-iptcExt:LocationCreatedSubLocation=' + $Nearest.Location),
-    ('-XMP-iptcExt:LocationCreatedCity=' + $Nearest.City),
-    ('-XMP-iptcExt:LocationCreatedProvinceState=' + $Nearest.StateProv),
-    ('-XMP-iptcExt:LocationCreatedCountryName=' + $Nearest.Country)
-  )
+    #
+    # --- XMP IPTC Core ---
+    #
+    $lines += @(
+        "-XMP-iptcCore:Location=$($Nearest.Location)",
+        "-XMP-iptcCore:CountryCode=$($Nearest.CountryCode)"
+    )
 
-  # Append identifiers into LocationCreated struct (XMP-iptcExt)
-  $structNeeded = $false
-  if ($Nearest.Identifiers -and $Nearest.Identifiers.Count -gt 0) {
-    $structNeeded = $true
-    foreach ($id in $Nearest.Identifiers) {
-      if ([string]::IsNullOrWhiteSpace($id)) { continue }
-      $args += ('-XMP-iptcExt:LocationCreated+={LocationId=' + $id + '}')
+    #
+    # --- XMP Photoshop ---
+    #
+    $lines += @(
+        "-XMP-photoshop:City=$($Nearest.City)",
+        "-XMP-photoshop:State=$($Nearest.StateProv)",
+        "-XMP-photoshop:Country=$($Nearest.Country)"
+    )
+
+    #
+    # --- XMP IPTC Extension ---
+    #
+    $lines += @(
+        "-XMP-iptcExt:LocationCreatedSubLocation=$($Nearest.Location)",
+        "-XMP-iptcExt:LocationCreatedCity=$($Nearest.City)",
+        "-XMP-iptcExt:LocationCreatedProvinceState=$($Nearest.StateProv)",
+        "-XMP-iptcExt:LocationCreatedCountryName=$($Nearest.Country)"
+    )
+
+    #
+    # --- LocationCreated Struct Handling ---
+    #
+    $structNeeded = $false
+    if ($Nearest.Identifiers -and $Nearest.Identifiers.Count -gt 0) {
+        $structNeeded = $true
+        foreach ($id in $Nearest.Identifiers) {
+            if ([string]::IsNullOrWhiteSpace($id)) { continue }
+            $lines += "-XMP-iptcExt:LocationCreated+={LocationId=$id}"
+        }
     }
-  }
-  if ($structNeeded) { $args = @('-struct','1') + $args }
 
-  $args += $Path
-  & exiftool @args
+    if ($structNeeded) {
+        # Must appear BEFORE struct tags
+        $lines = @('-struct', '1') + $lines
+    }
+
+    #
+    # Add the final file path
+    #
+    $lines += $Path
+
+    #
+    # Write argument file in UTF-8 (NO BOM)
+    #
+    [System.IO.File]::WriteAllLines($tempFile, $lines, $utf8)
+
+    #
+    # Run ExifTool with UTF-8 args
+    #
+    & exiftool -@ $tempFile
+
+    #
+    # Cleanup
+    #
+    Remove-Item $tempFile -ErrorAction SilentlyContinue
 }
+
 
 
 function Write-MetadataRule2 {
-  param(
-    [string]$Path,
-    [object]$Nearest
-  )
-  $args = @(
-  '-overwrite_original',
-  '-charset','Filename=UTF8',
-  '-charset','EXIF=UTF8',
-  '-charset','IPTC=UTF8',
-  '-charset','XMP=UTF8',
-    
-    # IPTC legacy tags
-    ('-IPTC:City=' + $Nearest.City),
-    ('-IPTC:Province-State=' + $Nearest.StateProv),
-    ('-IPTC:Country-PrimaryLocationName=' + $Nearest.Country),
-    ('-IPTC:Country-PrimaryLocationCode=' + $Nearest.CountryCode),
+    param(
+        [string]$Path,
+        [object]$Nearest
+    )
 
-    # XMP-iptcCore tags
-    ('-XMP-iptcCore:CountryCode=' + $Nearest.CountryCode),
+    # Create a UTF-8 (no BOM) encoder for ExifTool argument file
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $tempFile = [System.IO.Path]::GetTempFileName()
 
-    # XMP-photoshop tags
-    ('-XMP-photoshop:City=' + $Nearest.City),
-    ('-XMP-photoshop:State=' + $Nearest.StateProv),
-    ('-XMP-photoshop:Country=' + $Nearest.Country),
+    $lines = @(
+        '-overwrite_original',
+        '-charset', 'Filename=UTF8',
+        '-charset', 'EXIF=UTF8',
+        '-charset', 'IPTC=UTF8',
+        '-charset', 'XMP=UTF8'
+    )
 
-    # XMP-iptcExt: tags
-    ('-XMP-iptcExt:LocationCreatedCity=' + $Nearest.City),
-    ('-XMP-iptcExt:LocationCreatedProvinceState=' + $Nearest.StateProv),
-    ('-XMP-iptcExt:LocationCreatedCountryName=' + $Nearest.Country)
+    #
+    # --- IPTC Legacy Tags ---
+    #
+    $lines += @(
+        "-IPTC:City=$($Nearest.City)",
+        "-IPTC:Province-State=$($Nearest.StateProv)",
+        "-IPTC:Country-PrimaryLocationName=$($Nearest.Country)",
+        "-IPTC:Country-PrimaryLocationCode=$($Nearest.CountryCode)"
+    )
 
-  )
+    #
+    # --- XMP IPTC Core ---
+    #
+    $lines += "-XMP-iptcCore:CountryCode=$($Nearest.CountryCode)"
 
-  $args += $Path
-  & exiftool @args
+    #
+    # --- XMP Photoshop ---
+    #
+    $lines += @(
+        "-XMP-photoshop:City=$($Nearest.City)",
+        "-XMP-photoshop:State=$($Nearest.StateProv)",
+        "-XMP-photoshop:Country=$($Nearest.Country)"
+    )
+
+    #
+    # --- XMP IPTC Extension ---
+    #
+    $lines += @(
+        "-XMP-iptcExt:LocationCreatedCity=$($Nearest.City)",
+        "-XMP-iptcExt:LocationCreatedProvinceState=$($Nearest.StateProv)",
+        "-XMP-iptcExt:LocationCreatedCountryName=$($Nearest.Country)"
+    )
+
+    #
+    # Add the final file path
+    #
+    $lines += $Path
+
+    #
+    # Write argument file in UTF-8 (NO BOM)
+    #
+    [System.IO.File]::WriteAllLines($tempFile, $lines, $utf8)
+
+    #
+    # Run ExifTool with UTF-8 args
+    #
+    & exiftool -@ $tempFile
+
+    #
+    # Cleanup
+    #
+    Remove-Item $tempFile -ErrorAction SilentlyContinue
 }
+
 
 
 
