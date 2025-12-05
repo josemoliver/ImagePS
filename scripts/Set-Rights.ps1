@@ -1,3 +1,53 @@
+<#
+.SYNOPSIS
+    Sets creator and copyright metadata on image files using ExifTool and MWG standards.
+
+.DESCRIPTION
+    This script batch processes image files to set creator (author) and copyright information
+    in EXIF, IPTC, and XMP metadata. It uses ExifTool with an arguments file to ensure proper
+    UTF-8 encoding for international character support.
+
+.PARAMETER Name
+    The name of the creator/author to set in the metadata. This value is applied to the
+    mwg:creator tag across all processed images. Required parameter.
+
+.PARAMETER Filepath
+    The directory path containing image files to process. This parameter is required.
+    Use with -Recurse to process subdirectories.
+
+.PARAMETER Year
+    The copyright year to apply. Defaults to the current year (Get-Date).Year.
+    Used in the copyright statement: "© Copyright [Year] [Name]. All rights reserved"
+
+.PARAMETER Recurse
+    Switch parameter. When specified, the script processes image files in subdirectories
+    recursively. Omit this parameter to process only files in the specified directory.
+
+.EXAMPLE
+    .\Set-Rights.ps1 -Name "Jane Doe" -Filepath "C:\Photos"
+    
+    Sets creator to "Jane Doe" and copyright year to current year for all images in C:\Photos.
+
+.EXAMPLE
+    .\Set-Rights.ps1 -Name "John Smith" -Filepath "C:\Photos" -Year 2023 -Recurse
+    
+    Recursively processes all images in C:\Photos and subdirectories, setting creator to
+    "John Smith" and copyright year to 2023.
+
+.NOTES
+    - ExifTool must be installed and available in system PATH
+    - Metadata is written in UTF-8 without BOM for proper international character handling
+    - All existing metadata is preserved; only creator and copyright tags are modified
+    - Uses MWG (Metadata Working Group) standard tags: mwg:creator, mwg:copyright
+    - Supported image formats: JPG, JPEG, PNG, TIF, TIFF, HEIC, HEIF
+    - Always backup original images before running this script
+    - The script creates a temporary ExifTool arguments file which is cleaned up after execution
+
+.LINK
+    https://exiftool.org/
+    https://www.metadataworkinggroup.org/
+#>
+
 param(
     [Parameter(Mandatory = $true)]
     [string]$Name,

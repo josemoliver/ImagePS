@@ -16,7 +16,7 @@
   {
     "Make": "Canon",
     "Model": "*",
-    "LensId": "*17-50mm f/2.8 XR*",
+    "LensId": "*17-50mm f/2.8*",
     "LensModel": "17-50mm f/2.8 XR Di II",
     "LensManufacturer": "Tamron"
   },
@@ -30,13 +30,6 @@
   {
     "Make": "Canon",
     "Model": "*",
-    "LensId": "200",
-    "LensModel": "EF75-300mm f/4-5.6 USM",
-    "LensManufacturer": "Canon"
-  },
-  {
-    "Make": "Canon",
-    "Model": "*",
     "LensId": "*75-300mm*",
     "LensModel": "EF75-300mm f/4-5.6 USM",
     "LensManufacturer": "Canon"
@@ -44,14 +37,7 @@
   {
     "Make": "Canon",
     "Model": "*",
-    "LensId": "29",
-    "LensModel": "EF50mm f/1.8 II",
-    "LensManufacturer": "Canon"
-  },
-   {
-    "Make": "Canon",
-    "Model": "*",
-    "LensId": "EF50mm f/1.8 II",
+    "LensId": "*50mm f/1.8*",
     "LensModel": "EF50mm f/1.8 II",
     "LensManufacturer": "Canon"
   }
