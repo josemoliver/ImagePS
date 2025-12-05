@@ -80,7 +80,25 @@ Write-Host "Copyright: $copyright"
 Write-Host ""
 
 # --- discover files reliably ---
-$extensions = @(".jpg",".jpeg",".png",".tif",".tiff",".heic",".heif")
+$extensions = @(
+    ".jpg",
+    ".jpeg",
+    ".jxl",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".heic",
+    ".heif",
+    ".arw",
+    ".cr2",
+    ".cr3",
+    ".nef",
+    ".rw2",
+    ".orf",
+    ".raf",
+    ".dng",
+    ".webp"
+)
 $files = Get-ChildItem -Path $Filepath -File -Recurse:$Recurse -ErrorAction SilentlyContinue |
          Where-Object { $extensions -contains $_.Extension.ToLower() }
 

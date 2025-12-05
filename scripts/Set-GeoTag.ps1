@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Set_GeoTag.ps1 - Scan images, match nearest location from locations.json, and write MWG location tags via exiftool.
+  Set_GeoTag.ps1 - Scan images, match nearest location from locations.geojson, and write MWG location tags via exiftool.
 
 .PARAMETER FilePath
   Folder containing images to scan.
@@ -10,7 +10,7 @@
 
 .DESCRIPTION
   For each image with GPSLatitude/GPSLongitude:
-    - Finds the nearest location from locations.json using Haversine distance (meters).
+    - Finds the nearest location from locations.geojson (GeoJSON format) using Haversine distance (meters).
     - Rule 1: If within the location's Radius, writes MWG:Location, MWG:City, MWG:State, MWG:Country, CountryCode,
               and appends LocationIdentifiers to XMP-iptcExt:LocationCreated as LocationId.
     - Rule 2: If not within Radius but within 500 meters, writes MWG:City, MWG:State, MWG:Country, CountryCode.
@@ -18,6 +18,10 @@
 
 .NOTES
   Requires exiftool in PATH. Tested with ExifTool 12.x.
+
+.LINK
+  https://en.wikipedia.org/wiki/GeoJSON
+  
 #>
 
 [CmdletBinding(SupportsShouldProcess=$true)]
@@ -47,39 +51,67 @@ function Test-ExifTool {
 
 function Get-LocationsJsonPath {
   param([string]$Folder)
-  $candidate1 = Join-Path $Folder 'locations.json'
+  $candidate1 = Join-Path $Folder 'locations.geojson'
   if (Test-Path $candidate1) { return $candidate1 }
-  $candidate2 = Join-Path (Split-Path $PSCommandPath) 'locations.json'
+  $candidate2 = Join-Path (Split-Path $PSCommandPath) 'locations.geojson'
   if (Test-Path $candidate2) { return $candidate2 }
-  throw "locations.json not found in '$Folder' or script directory."
+  throw "locations.geojson not found in '$Folder' or script directory."
 }
 
 function Read-Locations {
   param([string]$JsonPath)
   try {
-    $json = Get-Content -LiteralPath $JsonPath -Raw | ConvertFrom-Json
+    $geojson = Get-Content -LiteralPath $JsonPath -Raw | ConvertFrom-Json
   } catch {
-    throw "Failed to read or parse locations.json: $($_.Exception.Message)"
-  }
-  if (-not $json -or $json.Count -eq 0) {
-    throw "locations.json contains no locations."
+    throw "Failed to read or parse GeoJSON: $($_.Exception.Message)"
   }
 
-  # Basic validation of required fields
-  foreach ($loc in $json) {
+  if (-not $geojson -or -not $geojson.features -or $geojson.features.Count -eq 0) {
+    throw "GeoJSON contains no features."
+  }
+
+  $locations = @()
+
+  foreach ($feature in $geojson.features) {
+    if (-not $feature.geometry -or -not $feature.properties) {
+      continue
+    }
+
+    $coords = $feature.geometry.coordinates
+    if (-not $coords -or $coords.Count -lt 2) {
+      continue
+    }
+
+    $loc = [pscustomobject]@{
+      Location        = $feature.properties.Location
+      Latitude        = [double]$coords[1]   # GeoJSON order is [lon, lat]
+      Longitude       = [double]$coords[0]
+      City            = $feature.properties.City
+      StateProvince   = $feature.properties.StateProvince
+      Country         = $feature.properties.Country
+      CountryCode     = $feature.properties.CountryCode
+      Radius          = [double]$feature.properties.Radius
+      LocationIdentifiers = $feature.properties.LocationIdentifiers
+    }
+
+    # Basic validation
     foreach ($field in 'Location','Latitude','Longitude','City','StateProvince','Country','Radius') {
-      if (-not ($loc.PSObject.Properties.Name -contains $field)) {
-        throw "locations.json missing field '$field' in one or more entries."
+      if (-not $loc.$field) {
+        throw "GeoJSON missing field '$field' in one or more features."
       }
     }
+
+    $locations += $loc
   }
-  return $json
+
+  return $locations
 }
+
 
 function Get-ImageFiles {
   param([string]$Folder)
   # Common photo extensions; adjust if needed
-  $exts = @('*.jpg','*.jpeg','*.tif','*.tiff','*.png','*.heic','*.arw','*.cr2','*.cr3','*.nef','*.rw2','*.orf','*.raf','*.dng')
+  $exts = @('*.jpg','*.jpeg','*.jxl','*.tif','*.tiff','*.png','*.heic','*.heif','*.arw','*.cr2','*.cr3','*.nef','*.rw2','*.orf','*.raf','*.dng','*.webp')
   $files = foreach ($ext in $exts) {
     Get-ChildItem -LiteralPath $Folder -Recurse -Filter $ext -File -ErrorAction SilentlyContinue
   }
@@ -152,89 +184,173 @@ function Find-NearestLocation {
 }
 
 function Write-MetadataRule1 {
-  param(
-    [string]$Path,
-    [object]$Nearest
-  )
-  $args = @(
-    '-overwrite_original',
-    '-charset','filename=UTF8',
-    '-charset','EXIF=UTF8',
+    param(
+        [string]$Path,
+        [object]$Nearest
+    )
 
-    # IPTC legacy tags
-    ('-IPTC:Sub-location=' + $Nearest.Location),
-    ('-IPTC:City=' + $Nearest.City),
-    ('-IPTC:Province-State=' + $Nearest.StateProv),
-    ('-IPTC:Country-PrimaryLocationName=' + $Nearest.Country),
-    ('-IPTC:Country-PrimaryLocationCode=' + $Nearest.CountryCode),
+    # Create a UTF-8 (no BOM) encoder for ExifTool argument file
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $tempFile = [System.IO.Path]::GetTempFileName()
 
-    # XMP-iptcCore tags
-    ('-XMP-iptcCore:Location=' + $Nearest.Location),
-    ('-XMP-iptcCore:CountryCode=' + $Nearest.CountryCode),
+    $lines = @(
+        '-overwrite_original',
+        '-charset', 'Filename=UTF8',
+        '-charset', 'EXIF=UTF8',
+        '-charset', 'IPTC=UTF8',
+        '-charset', 'XMP=UTF8'
+    )
 
-    # XMP-photoshop tags
-    ('-XMP-photoshop:City=' + $Nearest.City),
-    ('-XMP-photoshop:State=' + $Nearest.StateProv),
-    ('-XMP-photoshop:Country=' + $Nearest.Country),
+    #
+    # --- IPTC Legacy Tags (ISO-8859-1 internally) ---
+    #
+    $lines += @(
+        "-IPTC:Sub-location=$($Nearest.Location)",
+        "-IPTC:City=$($Nearest.City)",
+        "-IPTC:Province-State=$($Nearest.StateProv)",
+        "-IPTC:Country-PrimaryLocationName=$($Nearest.Country)",
+        "-IPTC:Country-PrimaryLocationCode=$($Nearest.CountryCode)"
+    )
 
-    # XMP-iptcExt: tags
-    ('-XMP-iptcExt:LocationCreatedSubLocation=' + $Nearest.Location),
-    ('-XMP-iptcExt:LocationCreatedCity=' + $Nearest.City),
-    ('-XMP-iptcExt:LocationCreatedProvince=' + $Nearest.StateProv),
-    ('-XMP-iptcExt:LocationCreatedCountry=' + $Nearest.Country)
+    #
+    # --- XMP IPTC Core ---
+    #
+    $lines += @(
+        "-XMP-iptcCore:Location=$($Nearest.Location)",
+        "-XMP-iptcCore:CountryCode=$($Nearest.CountryCode)"
+    )
 
-  )
+    #
+    # --- XMP Photoshop ---
+    #
+    $lines += @(
+        "-XMP-photoshop:City=$($Nearest.City)",
+        "-XMP-photoshop:State=$($Nearest.StateProv)",
+        "-XMP-photoshop:Country=$($Nearest.Country)"
+    )
 
-  # Append identifiers into LocationCreated struct (XMP-iptcExt)
-  $structNeeded = $false
-  if ($Nearest.Identifiers -and $Nearest.Identifiers.Count -gt 0) {
-    $structNeeded = $true
-    foreach ($id in $Nearest.Identifiers) {
-      if ([string]::IsNullOrWhiteSpace($id)) { continue }
-      $args += ('-XMP-iptcExt:LocationCreated+={LocationId=' + $id + '}')
+    #
+    # --- XMP IPTC Extension ---
+    #
+    $lines += @(
+        "-XMP-iptcExt:LocationCreatedSubLocation=$($Nearest.Location)",
+        "-XMP-iptcExt:LocationCreatedCity=$($Nearest.City)",
+        "-XMP-iptcExt:LocationCreatedProvinceState=$($Nearest.StateProv)",
+        "-XMP-iptcExt:LocationCreatedCountryName=$($Nearest.Country)"
+    )
+
+    #
+    # --- LocationCreated Struct Handling ---
+    #
+    $structNeeded = $false
+    if ($Nearest.Identifiers -and $Nearest.Identifiers.Count -gt 0) {
+        $structNeeded = $true
+        foreach ($id in $Nearest.Identifiers) {
+            if ([string]::IsNullOrWhiteSpace($id)) { continue }
+            $lines += "-XMP-iptcExt:LocationCreated+={LocationId=$id}"
+        }
     }
-  }
-  if ($structNeeded) { $args = @('-struct','1') + $args }
 
-  $args += $Path
-  & exiftool @args
+    if ($structNeeded) {
+        # Must appear BEFORE struct tags
+        $lines = @('-struct', '1') + $lines
+    }
+
+    #
+    # Add the final file path
+    #
+    $lines += $Path
+
+    #
+    # Write argument file in UTF-8 (NO BOM)
+    #
+    [System.IO.File]::WriteAllLines($tempFile, $lines, $utf8)
+
+    #
+    # Run ExifTool with UTF-8 args
+    #
+    & exiftool -@ $tempFile
+
+    #
+    # Cleanup
+    #
+    Remove-Item $tempFile -ErrorAction SilentlyContinue
 }
+
 
 
 function Write-MetadataRule2 {
-  param(
-    [string]$Path,
-    [object]$Nearest
-  )
-  $args = @(
-    '-overwrite_original',
-    '-charset','filename=UTF8',
-    '-charset','EXIF=UTF8',
+    param(
+        [string]$Path,
+        [object]$Nearest
+    )
 
-    # IPTC legacy tags
-    ('-IPTC:City=' + $Nearest.City),
-    ('-IPTC:Province-State=' + $Nearest.StateProv),
-    ('-IPTC:Country-PrimaryLocationName=' + $Nearest.Country),
-    ('-IPTC:Country-PrimaryLocationCode=' + $Nearest.CountryCode),
+    # Create a UTF-8 (no BOM) encoder for ExifTool argument file
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $tempFile = [System.IO.Path]::GetTempFileName()
 
-    # XMP-iptcCore tags
-    ('-XMP-iptcCore:CountryCode=' + $Nearest.CountryCode),
+    $lines = @(
+        '-overwrite_original',
+        '-charset', 'Filename=UTF8',
+        '-charset', 'EXIF=UTF8',
+        '-charset', 'IPTC=UTF8',
+        '-charset', 'XMP=UTF8'
+    )
 
-    # XMP-photoshop tags
-    ('-XMP-photoshop:City=' + $Nearest.City),
-    ('-XMP-photoshop:State=' + $Nearest.StateProv),
-    ('-XMP-photoshop:Country=' + $Nearest.Country),
+    #
+    # --- IPTC Legacy Tags ---
+    #
+    $lines += @(
+        "-IPTC:City=$($Nearest.City)",
+        "-IPTC:Province-State=$($Nearest.StateProv)",
+        "-IPTC:Country-PrimaryLocationName=$($Nearest.Country)",
+        "-IPTC:Country-PrimaryLocationCode=$($Nearest.CountryCode)"
+    )
 
-    # XMP-iptcExt: tags
-    ('-XMP-iptcExt:LocationCreatedCity=' + $Nearest.City),
-    ('-XMP-iptcExt:LocationCreatedProvince=' + $Nearest.StateProv),
-    ('-XMP-iptcExt:LocationCreatedCountry=' + $Nearest.Country)
+    #
+    # --- XMP IPTC Core ---
+    #
+    $lines += "-XMP-iptcCore:CountryCode=$($Nearest.CountryCode)"
 
-  )
+    #
+    # --- XMP Photoshop ---
+    #
+    $lines += @(
+        "-XMP-photoshop:City=$($Nearest.City)",
+        "-XMP-photoshop:State=$($Nearest.StateProv)",
+        "-XMP-photoshop:Country=$($Nearest.Country)"
+    )
 
-  $args += $Path
-  & exiftool @args
+    #
+    # --- XMP IPTC Extension ---
+    #
+    $lines += @(
+        "-XMP-iptcExt:LocationCreatedCity=$($Nearest.City)",
+        "-XMP-iptcExt:LocationCreatedProvinceState=$($Nearest.StateProv)",
+        "-XMP-iptcExt:LocationCreatedCountryName=$($Nearest.Country)"
+    )
+
+    #
+    # Add the final file path
+    #
+    $lines += $Path
+
+    #
+    # Write argument file in UTF-8 (NO BOM)
+    #
+    [System.IO.File]::WriteAllLines($tempFile, $lines, $utf8)
+
+    #
+    # Run ExifTool with UTF-8 args
+    #
+    & exiftool -@ $tempFile
+
+    #
+    # Cleanup
+    #
+    Remove-Item $tempFile -ErrorAction SilentlyContinue
 }
+
 
 
 

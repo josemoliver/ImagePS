@@ -106,7 +106,7 @@ Matches GPS coordinates in image files to nearest locations from a locations dat
 .\Set-GeoTag.ps1 -FilePath "C:\Photos" -Write
 ```
 
-**Dependencies:** Requires `locations.json` in script directory or target folder
+**Dependencies:** Requires `locations.geojson` in script directory or target folder
 
 ---
 
@@ -181,7 +181,7 @@ Annotates images with weather data (temperature, humidity, pressure) by matching
   - `Set-Lens.ps1` with `-DryRun`
   - `Set-WeatherTags.ps1` (no `-Write` flag)
 - **External Data Files**: Some scripts require companion data files in the script directory:
-  - `Set-GeoTag.ps1` requires `locations.json`
+  - `Set-GeoTag.ps1` requires `locations.geojson`
   - `Set-Lens.ps1` requires `LensRules.json`
   - `Set-WeatherTags.ps1` requires `weatherhistory.csv`
 
@@ -194,8 +194,8 @@ Annotates images with weather data (temperature, humidity, pressure) by matching
 | "Invalid Timezone format" | Use format `±HH:MM` (e.g., `+02:00` or `-05:00`) |
 | No files processed | Check image file extensions match script filters (JPG, PNG, etc.) |
 | Changes not saved | Ensure ExifTool has write permissions to image directory |
-| "locations.json not found" | Ensure `locations.json` exists in script directory or target folder (required by `Set-GeoTag.ps1`) |
-| "LensRules.json not found" | Ensure `LensRules.json` exists in script directory (required by `Set-Lens.ps1`) |
+| "locations.geojson not found" | Ensure `locations.geojson` exists in script directory or target folder (required by `Set-GeoTag.ps1`) |
+| "LensRules.geojson not found" | Ensure `LensRules.geojson` exists in script directory (required by `Set-Lens.ps1`) |
 | "weatherhistory.csv not found" | Ensure `weatherhistory.csv` exists in target directory (required by `Set-WeatherTags.ps1`) |
 | GPS data not tagged | Verify images contain valid GPS coordinates (latitude/longitude) readable by ExifTool |
 | Weather threshold issues | Adjust `-Threshold` parameter (default 30 minutes) to match your weather data intervals |

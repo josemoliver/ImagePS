@@ -91,13 +91,25 @@ if ($Timezone -notmatch $tzPattern) {
     exit 1
 }
 
-# Build target file pattern
-$targetFiles = Join-Path -Path $Filepath -ChildPath "*.jpg"
+# Build list of target files for supported image extensions
+$exts = @('*.jpg','*.jpeg','*.jxl','*.tif','*.tiff','*.png','*.heic','*.heif','*.arw','*.cr2','*.cr3','*.nef','*.rw2','*.orf','*.raf','*.dng','*.webp')
+$files = @()
+foreach ($pat in $exts) {
+    $files += Get-ChildItem -Path $Filepath -Filter $pat -File -ErrorAction SilentlyContinue
+}
+$files = $files | Sort-Object -Property FullName -Unique
 
-# Build exiftool command
+if ($files.Count -eq 0) {
+    Write-Error "No supported image files found in $Filepath"
+    exit 1
+}
+
+# Build exiftool command and run against gathered files
+$fileArgs = $files | ForEach-Object { '"' + $_.FullName + '"' } | -join ' '
+
 $exifCommand = @(
     'exiftool',
-    $targetFiles,
+    $fileArgs,
     ("'-OffsetTime*=$Timezone'"),
     ("'-XMP-photoshop:DateCreated<`${XMP-photoshop:DateCreated}s$Timezone'"),
     ("'-XMP-xmp:CreateDate<`${XMP-xmp:CreateDate}s$Timezone'"),

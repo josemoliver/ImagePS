@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Set-Lens.ps1 - Apply lens metadata rules using exiftool.
+    Set-Lens.ps1 - Apply lens metadata rules in order to set the Microsoft Lens XMP Values using exiftool.
 
 .DESCRIPTION
     Scans image files in Filepath (optionally recurse), reads Make/Model/LensID via exiftool JSON,
@@ -66,7 +66,8 @@ if (-not (Test-Path $Filepath)) {
     exit 1
 }
 
-$extensions = '^\.jpe?g$|^\.png$|^\.tiff?$'
+
+$extensions = '^\.jpe?g$|^\.jxl$|^\.png$|^\.tiff?$|^\.heic$|^\.heif$|^\.arw$|^\.cr2$|^\.cr3$|^\.nef$|^\.rw2$|^\.orf$|^\.raf$|^\.dng$|^\.webp$'
 
 $files = Get-ChildItem -Path $Filepath -File -Recurse:$Recurse |
     Where-Object { $_.Extension -match $extensions }

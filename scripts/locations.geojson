@@ -1,0 +1,165 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-73.9855, 40.7580] },
+      "properties": {
+        "Location": "Times Square",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 300,
+        "LocationIdentifiers": [
+          "https://www.nycgo.com/attractions/times-square",
+          "urn:location:times-square"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-73.9654, 40.7829] },
+      "properties": {
+        "Location": "Central Park",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 1000,
+        "LocationIdentifiers": [
+          "https://www.centralparknyc.org/",
+          "urn:location:central-park"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-74.0445, 40.6892] },
+      "properties": {
+        "Location": "Statue of Liberty",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 500,
+        "LocationIdentifiers": [
+          "https://www.nps.gov/stli/index.htm",
+          "urn:location:statue-of-liberty"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-73.9857, 40.7484] },
+      "properties": {
+        "Location": "Empire State Building",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 200,
+        "LocationIdentifiers": [
+          "https://www.esbnyc.com/",
+          "urn:location:empire-state-building"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-73.9969, 40.7061] },
+      "properties": {
+        "Location": "Brooklyn Bridge",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 400,
+        "LocationIdentifiers": [
+          "https://www.nycgo.com/attractions/brooklyn-bridge",
+          "urn:location:brooklyn-bridge"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-73.9787, 40.7587] },
+      "properties": {
+        "Location": "Rockefeller Center",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 250,
+        "LocationIdentifiers": [
+          "https://www.rockefellercenter.com/",
+          "urn:location:rockefeller-center"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-74.0134, 40.7127] },
+      "properties": {
+        "Location": "One World Trade Center",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 300,
+        "LocationIdentifiers": [
+          "https://www.oneworldobservatory.com/",
+          "urn:location:one-world-trade-center"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-73.9632, 40.7794] },
+      "properties": {
+        "Location": "Metropolitan Museum of Art",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 200,
+        "LocationIdentifiers": [
+          "https://www.metmuseum.org/",
+          "urn:location:metropolitan-museum-of-art"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-73.9845, 40.7590] },
+      "properties": {
+        "Location": "Broadway Theater District",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 500,
+        "LocationIdentifiers": [
+          "https://www.nycgo.com/articles/broadway-theater-district",
+          "urn:location:broadway-theater-district"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-73.9772, 40.7527] },
+      "properties": {
+        "Location": "Grand Central Terminal",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 200,
+        "LocationIdentifiers": [
+          "https://www.grandcentralterminal.com/",
+          "urn:location:grand-central-terminal"
+        ]
+      }
+    }
+  ]
+}

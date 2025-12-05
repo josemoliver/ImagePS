@@ -19,7 +19,25 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Filepath,
 
-    [string[]]$Extensions = @("jpg"),
+    [string[]]$Extensions = @(
+        "jpg",
+        "jpeg",
+        "jxl",
+        "png",
+        "tif",
+        "tiff",
+        "heic",
+        "heif",
+        "arw",
+        "cr2",
+        "cr3",
+        "nef",
+        "rw2",
+        "orf",
+        "raf",
+        "dng",
+        "webp"
+    ),
 
     [switch]$Recurse
 )
