@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Set-Lens.ps1 - Apply lens metadata rules using exiftool.
+    Set-Lens.ps1 - Apply lens metadata rules in order to set the Microsoft Lens XMP Values using exiftool.
 
 .DESCRIPTION
     Scans image files in Filepath (optionally recurse), reads Make/Model/LensID via exiftool JSON,

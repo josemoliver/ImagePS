@@ -18,6 +18,10 @@
 
 .NOTES
   Requires exiftool in PATH. Tested with ExifTool 12.x.
+
+.LINK
+  https://en.wikipedia.org/wiki/GeoJSON
+  
 #>
 
 [CmdletBinding(SupportsShouldProcess=$true)]
@@ -185,9 +189,11 @@ function Write-MetadataRule1 {
     [object]$Nearest
   )
   $args = @(
-    '-overwrite_original',
-    '-charset','filename=UTF8',
-    '-charset','EXIF=UTF8',
+  '-overwrite_original',
+  '-charset','Filename=UTF8',
+  '-charset','EXIF=UTF8',
+  '-charset','IPTC=UTF8',
+  '-charset','XMP=UTF8',
 
     # IPTC legacy tags
     ('-IPTC:Sub-location=' + $Nearest.Location),
@@ -205,12 +211,11 @@ function Write-MetadataRule1 {
     ('-XMP-photoshop:State=' + $Nearest.StateProv),
     ('-XMP-photoshop:Country=' + $Nearest.Country),
 
-    # XMP-iptcExt: tags
+    # XMP-iptcExt tags
     ('-XMP-iptcExt:LocationCreatedSubLocation=' + $Nearest.Location),
     ('-XMP-iptcExt:LocationCreatedCity=' + $Nearest.City),
-    ('-XMP-iptcExt:LocationCreatedProvince=' + $Nearest.StateProv),
-    ('-XMP-iptcExt:LocationCreatedCountry=' + $Nearest.Country)
-
+    ('-XMP-iptcExt:LocationCreatedProvinceState=' + $Nearest.StateProv),
+    ('-XMP-iptcExt:LocationCreatedCountryName=' + $Nearest.Country)
   )
 
   # Append identifiers into LocationCreated struct (XMP-iptcExt)
@@ -235,10 +240,12 @@ function Write-MetadataRule2 {
     [object]$Nearest
   )
   $args = @(
-    '-overwrite_original',
-    '-charset','filename=UTF8',
-    '-charset','EXIF=UTF8',
-
+  '-overwrite_original',
+  '-charset','Filename=UTF8',
+  '-charset','EXIF=UTF8',
+  '-charset','IPTC=UTF8',
+  '-charset','XMP=UTF8',
+    
     # IPTC legacy tags
     ('-IPTC:City=' + $Nearest.City),
     ('-IPTC:Province-State=' + $Nearest.StateProv),
@@ -255,8 +262,8 @@ function Write-MetadataRule2 {
 
     # XMP-iptcExt: tags
     ('-XMP-iptcExt:LocationCreatedCity=' + $Nearest.City),
-    ('-XMP-iptcExt:LocationCreatedProvince=' + $Nearest.StateProv),
-    ('-XMP-iptcExt:LocationCreatedCountry=' + $Nearest.Country)
+    ('-XMP-iptcExt:LocationCreatedProvinceState=' + $Nearest.StateProv),
+    ('-XMP-iptcExt:LocationCreatedCountryName=' + $Nearest.Country)
 
   )
 
