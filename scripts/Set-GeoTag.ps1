@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Set_GeoTag.ps1 - Scan images, match nearest location from locations.json, and write MWG location tags via exiftool.
+  Set_GeoTag.ps1 - Scan images, match nearest location from locations.geojson, and write MWG location tags via exiftool.
 
 .PARAMETER FilePath
   Folder containing images to scan.
@@ -10,7 +10,7 @@
 
 .DESCRIPTION
   For each image with GPSLatitude/GPSLongitude:
-    - Finds the nearest location from locations.json using Haversine distance (meters).
+    - Finds the nearest location from locations.geojson (GeoJSON format) using Haversine distance (meters).
     - Rule 1: If within the location's Radius, writes MWG:Location, MWG:City, MWG:State, MWG:Country, CountryCode,
               and appends LocationIdentifiers to XMP-iptcExt:LocationCreated as LocationId.
     - Rule 2: If not within Radius but within 500 meters, writes MWG:City, MWG:State, MWG:Country, CountryCode.
@@ -47,39 +47,67 @@ function Test-ExifTool {
 
 function Get-LocationsJsonPath {
   param([string]$Folder)
-  $candidate1 = Join-Path $Folder 'locations.json'
+  $candidate1 = Join-Path $Folder 'locations.geojson'
   if (Test-Path $candidate1) { return $candidate1 }
-  $candidate2 = Join-Path (Split-Path $PSCommandPath) 'locations.json'
+  $candidate2 = Join-Path (Split-Path $PSCommandPath) 'locations.geojson'
   if (Test-Path $candidate2) { return $candidate2 }
-  throw "locations.json not found in '$Folder' or script directory."
+  throw "locations.geojson not found in '$Folder' or script directory."
 }
 
 function Read-Locations {
   param([string]$JsonPath)
   try {
-    $json = Get-Content -LiteralPath $JsonPath -Raw | ConvertFrom-Json
+    $geojson = Get-Content -LiteralPath $JsonPath -Raw | ConvertFrom-Json
   } catch {
-    throw "Failed to read or parse locations.json: $($_.Exception.Message)"
-  }
-  if (-not $json -or $json.Count -eq 0) {
-    throw "locations.json contains no locations."
+    throw "Failed to read or parse GeoJSON: $($_.Exception.Message)"
   }
 
-  # Basic validation of required fields
-  foreach ($loc in $json) {
+  if (-not $geojson -or -not $geojson.features -or $geojson.features.Count -eq 0) {
+    throw "GeoJSON contains no features."
+  }
+
+  $locations = @()
+
+  foreach ($feature in $geojson.features) {
+    if (-not $feature.geometry -or -not $feature.properties) {
+      continue
+    }
+
+    $coords = $feature.geometry.coordinates
+    if (-not $coords -or $coords.Count -lt 2) {
+      continue
+    }
+
+    $loc = [pscustomobject]@{
+      Location        = $feature.properties.Location
+      Latitude        = [double]$coords[1]   # GeoJSON order is [lon, lat]
+      Longitude       = [double]$coords[0]
+      City            = $feature.properties.City
+      StateProvince   = $feature.properties.StateProvince
+      Country         = $feature.properties.Country
+      CountryCode     = $feature.properties.CountryCode
+      Radius          = [double]$feature.properties.Radius
+      LocationIdentifiers = $feature.properties.LocationIdentifiers
+    }
+
+    # Basic validation
     foreach ($field in 'Location','Latitude','Longitude','City','StateProvince','Country','Radius') {
-      if (-not ($loc.PSObject.Properties.Name -contains $field)) {
-        throw "locations.json missing field '$field' in one or more entries."
+      if (-not $loc.$field) {
+        throw "GeoJSON missing field '$field' in one or more features."
       }
     }
+
+    $locations += $loc
   }
-  return $json
+
+  return $locations
 }
+
 
 function Get-ImageFiles {
   param([string]$Folder)
   # Common photo extensions; adjust if needed
-  $exts = @('*.jpg','*.jpeg','*.tif','*.tiff','*.png','*.heic','*.arw','*.cr2','*.cr3','*.nef','*.rw2','*.orf','*.raf','*.dng')
+  $exts = @('*.jpg','*.jpeg','*.jxl','*.tif','*.tiff','*.png','*.heic','*.heif','*.arw','*.cr2','*.cr3','*.nef','*.rw2','*.orf','*.raf','*.dng','*.webp')
   $files = foreach ($ext in $exts) {
     Get-ChildItem -LiteralPath $Folder -Recurse -Filter $ext -File -ErrorAction SilentlyContinue
   }

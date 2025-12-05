@@ -170,7 +170,7 @@ $version = Get-ExiftoolVersion
 Write-Verbose "Exiftool version $version detected."
 
 $imageFiles = Get-ChildItem -Path $FilePath -Recurse -File |
-    Where-Object { $_.Extension -match '^\.(jpg|jpeg|heic)$' }
+    Where-Object { $_.Extension -match '^\.(jpg|jpeg|jxl|tif|tiff|png|heic|heif|arw|cr2|cr3|nef|rw2|orf|raf|dng|webp)$' }
 
 if (-not $imageFiles) {
     Write-Error "No supported image files found in $FilePath"
