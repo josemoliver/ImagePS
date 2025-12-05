@@ -156,57 +156,87 @@ function Write-MetadataRule1 {
     [string]$Path,
     [object]$Nearest
   )
-  # Rule 1: inside Radius -> MWG:Location + City, State, Country, CountryCode + LocationCreated LocationId entries
   $args = @(
     '-overwrite_original',
     '-charset','filename=UTF8',
     '-charset','EXIF=UTF8',
-    '-MWG:Location=' + $Nearest.Location,
-    '-MWG:City=' + $Nearest.City,
-    '-MWG:State=' + $Nearest.StateProv,
-    '-MWG:Country=' + $Nearest.Country
-  )
-  if ($Nearest.CountryCode) {
-    $args += ('-XMP-iptcCore:CountryCode=' + $Nearest.CountryCode)
-  }
 
-  # Append identifiers into LocationCreated struct (XMP-iptcExt) as LocationId
-  # ExifTool requires -struct when writing structured XMP
+    # IPTC legacy tags
+    ('-IPTC:Sub-location=' + $Nearest.Location),
+    ('-IPTC:City=' + $Nearest.City),
+    ('-IPTC:Province-State=' + $Nearest.StateProv),
+    ('-IPTC:Country-PrimaryLocationName=' + $Nearest.Country),
+    ('-IPTC:Country-PrimaryLocationCode=' + $Nearest.CountryCode),
+
+    # XMP-iptcCore tags
+    ('-XMP-iptcCore:Location=' + $Nearest.Location),
+    ('-XMP-iptcCore:CountryCode=' + $Nearest.CountryCode),
+
+    # XMP-photoshop tags
+    ('-XMP-photoshop:City=' + $Nearest.City),
+    ('-XMP-photoshop:State=' + $Nearest.StateProv),
+    ('-XMP-photoshop:Country=' + $Nearest.Country),
+
+    # XMP-iptcExt: tags
+    ('-XMP-iptcExt:LocationCreatedSubLocation=' + $Nearest.Location),
+    ('-XMP-iptcExt:LocationCreatedCity=' + $Nearest.City),
+    ('-XMP-iptcExt:LocationCreatedProvince=' + $Nearest.StateProv),
+    ('-XMP-iptcExt:LocationCreatedCountry=' + $Nearest.Country)
+
+  )
+
+  # Append identifiers into LocationCreated struct (XMP-iptcExt)
   $structNeeded = $false
   if ($Nearest.Identifiers -and $Nearest.Identifiers.Count -gt 0) {
     $structNeeded = $true
     foreach ($id in $Nearest.Identifiers) {
       if ([string]::IsNullOrWhiteSpace($id)) { continue }
-      # Add a minimal struct with LocationId
       $args += ('-XMP-iptcExt:LocationCreated+={LocationId=' + $id + '}')
     }
   }
-  if ($structNeeded) { $args = @('-struct', '1') + $args }
+  if ($structNeeded) { $args = @('-struct','1') + $args }
 
   $args += $Path
   & exiftool @args
 }
+
 
 function Write-MetadataRule2 {
   param(
     [string]$Path,
     [object]$Nearest
   )
-  # Rule 2: outside Radius but ≤ 500 m -> MWG City, State, Country (+ CountryCode)
   $args = @(
     '-overwrite_original',
     '-charset','filename=UTF8',
     '-charset','EXIF=UTF8',
-    '-MWG:City=' + $Nearest.City,
-    '-MWG:State=' + $Nearest.StateProv,
-    '-MWG:Country=' + $Nearest.Country
+
+    # IPTC legacy tags
+    ('-IPTC:City=' + $Nearest.City),
+    ('-IPTC:Province-State=' + $Nearest.StateProv),
+    ('-IPTC:Country-PrimaryLocationName=' + $Nearest.Country),
+    ('-IPTC:Country-PrimaryLocationCode=' + $Nearest.CountryCode),
+
+    # XMP-iptcCore tags
+    ('-XMP-iptcCore:CountryCode=' + $Nearest.CountryCode),
+
+    # XMP-photoshop tags
+    ('-XMP-photoshop:City=' + $Nearest.City),
+    ('-XMP-photoshop:State=' + $Nearest.StateProv),
+    ('-XMP-photoshop:Country=' + $Nearest.Country),
+
+    # XMP-iptcExt: tags
+    ('-XMP-iptcExt:LocationCreatedCity=' + $Nearest.City),
+    ('-XMP-iptcExt:LocationCreatedProvince=' + $Nearest.StateProv),
+    ('-XMP-iptcExt:LocationCreatedCountry=' + $Nearest.Country)
+
   )
-  if ($Nearest.CountryCode) {
-    $args += ('-XMP-iptcCore:CountryCode=' + $Nearest.CountryCode)
-  }
+
   $args += $Path
   & exiftool @args
 }
+
+
 
 # -----------------------------
 # Main

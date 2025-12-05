@@ -1,4 +1,3 @@
-
 # ImagePS
 
 PowerShell scripts for automating photo metadata operations using ExifTool.
@@ -12,6 +11,9 @@ ImagePS is a collection of PowerShell utilities designed to batch process image 
 - **Creator & Copyright Management** - Batch set creator and copyright information
 - **Unique ID Assignment** - Assign random GUIDs to image files automatically
 - **Timezone Offset Correction** - Update datetime and timezone metadata across images
+- **Geolocation Tagging** - Match GPS coordinates to locations and add location metadata
+- **Lens Metadata** - Apply lens information based on camera Make/Model/LensID
+- **Weather Annotation** - Tag images with weather data based on photo timestamp
 
 ## Requirements
 
@@ -83,6 +85,72 @@ Updates timezone offset metadata across EXIF and XMP datetime fields. Useful for
 
 ---
 
+### Set-GeoTag.ps1
+
+Matches GPS coordinates in image files to nearest locations from a locations database and writes location metadata tags.
+
+**Parameters:**
+- `-FilePath` (required): Directory containing images with GPS data
+- `-Write` (optional): Switch to enable writing metadata. Without this, performs a dry run
+
+**Matching Rules:**
+- **Rule 1 (Exact Location):** If GPS within location's Radius, writes:
+  - `MWG:Location`, `MWG:City`, `MWG:State`, `MWG:Country`, `CountryCode`
+  - Appends LocationIdentifiers to `XMP-iptcExt:LocationCreated`
+- **Rule 2 (Nearby):** If within 500m but outside Radius, writes:
+  - `MWG:City`, `MWG:State`, `MWG:Country`, `CountryCode`
+
+**Example:**
+```powershell
+.\Set-GeoTag.ps1 -FilePath "C:\Photos" -Write
+```
+
+**Dependencies:** Requires `locations.json` in script directory or target folder
+
+---
+
+### Set-Lens.ps1
+
+Applies lens metadata based on camera Make/Model/LensID using rules from LensRules.json.
+
+**Parameters:**
+- `-Filepath` (required): Directory containing images
+- `-Recurse` (optional): Process subdirectories recursively
+- `-DryRun` (optional): Preview changes without writing to files
+
+**Example:**
+```powershell
+.\Set-Lens.ps1 -Filepath "C:\Photos" -Recurse
+.\Set-Lens.ps1 -Filepath "C:\Photos" -DryRun
+```
+
+**Output:** Sets `XMP-microsoft:Lens` metadata based on matched rules. Displays summary report at completion.
+
+**Dependencies:** Requires `LensRules.json` in script directory
+
+---
+
+### Set-WeatherTags.ps1
+
+Annotates images with weather data (temperature, humidity, pressure) by matching photo EXIF timestamps to weather readings.
+
+**Parameters:**
+- `-FilePath` (required): Directory containing images
+- `-Write` (optional): Switch to enable writing metadata. Without this, only preview is shown
+- `-Threshold` (optional): Maximum time difference in minutes between photo and weather reading (default: 30)
+
+**Example:**
+```powershell
+.\Set-WeatherTags.ps1 -FilePath "C:\Photos" -Write -Threshold 15
+.\Set-WeatherTags.ps1 -FilePath "C:\Photos" -Write
+```
+
+**Supported Formats:** JPG, JPEG, HEIC
+
+**Dependencies:** Requires `weatherhistory.csv` file in the same format as weather API exports
+
+---
+
 ## Usage
 
 1. **Navigate to script directory:**
@@ -107,6 +175,14 @@ Updates timezone offset metadata across EXIF and XMP datetime fields. Useful for
 - **ExifTool Path**: ExifTool must be in system PATH. If not found, scripts will exit with error.
 - **Timezone Format**: Must use `±HH:MM` format. Invalid formats will cause script to exit.
 - **File Preservation**: All metadata is preserved by default; only specified tags are modified.
+- **Dry Run / Preview Mode**: `Set-GeoTag.ps1`, `Set-Lens.ps1`, and `Set-WeatherTags.ps1` support preview modes without writing:
+  - `Set-GeoTag.ps1` (no `-Write` flag)
+  - `Set-Lens.ps1` with `-DryRun`
+  - `Set-WeatherTags.ps1` (no `-Write` flag)
+- **External Data Files**: Some scripts require companion data files in the script directory:
+  - `Set-GeoTag.ps1` requires `locations.json`
+  - `Set-Lens.ps1` requires `LensRules.json`
+  - `Set-WeatherTags.ps1` requires `weatherhistory.csv`
 
 ## Troubleshooting
 
@@ -117,6 +193,11 @@ Updates timezone offset metadata across EXIF and XMP datetime fields. Useful for
 | "Invalid Timezone format" | Use format `±HH:MM` (e.g., `+02:00` or `-05:00`) |
 | No files processed | Check image file extensions match script filters (JPG, PNG, etc.) |
 | Changes not saved | Ensure ExifTool has write permissions to image directory |
+| "locations.json not found" | Ensure `locations.json` exists in script directory or target folder (required by `Set-GeoTag.ps1`) |
+| "LensRules.json not found" | Ensure `LensRules.json` exists in script directory (required by `Set-Lens.ps1`) |
+| "weatherhistory.csv not found" | Ensure `weatherhistory.csv` exists in target directory (required by `Set-WeatherTags.ps1`) |
+| GPS data not tagged | Verify images contain valid GPS coordinates (latitude/longitude) readable by ExifTool |
+| Weather threshold issues | Adjust `-Threshold` parameter (default 30 minutes) to match your weather data intervals |
 
 ## Development
 

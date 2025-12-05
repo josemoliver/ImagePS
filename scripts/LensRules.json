@@ -17,13 +17,13 @@
     "Make": "Canon",
     "Model": "*",
     "LensId": "*17-50mm f/2.8*",
-    "LensModel": "17-50mm f/2.8 XR Di II",
+    "LensModel": "AF 17-50mm f/2.8 Di-II LD Aspherical",
     "LensManufacturer": "Tamron"
   },
   {
     "Make": "Canon",
     "Model": "*",
-    "LensId": "EF-S18-55mm f/3.5-5.6",
+    "LensId": "*EF-S 18-55mm f/3.5-5.6*",
     "LensModel": "EF-S18-55mm f/3.5-5.6",
     "LensManufacturer": "Canon"
   },
