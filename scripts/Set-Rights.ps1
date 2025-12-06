@@ -121,7 +121,7 @@ $argLines = @(
     "-charset",
     "iptc=utf8",
     "-charset",
-    "xmp=utf8",
+
 
     "-mwg:creator=$Name",
     "-mwg:copyright=$copyright"

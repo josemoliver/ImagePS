@@ -53,8 +53,8 @@
 #>
 
 param(
-    [Parameter(Mandatory=$true)]
-    [string]$Timezone,
+    [Parameter(Mandatory=$false)]
+    [string]$Timezone = "",
 
     [Parameter(Mandatory=$true)]
     [string]$Filepath
@@ -104,18 +104,37 @@ if ($files.Count -eq 0) {
     exit 1
 }
 
-# Build exiftool command and run against gathered files
-$fileArgs = $files | ForEach-Object { '"' + $_.FullName + '"' } | -join ' '
+Write-Host "Processing $($files.Count) file(s)..."
+Write-Host ""
 
-$exifCommand = @(
-    'exiftool',
-    $fileArgs,
-    ("'-OffsetTime*=$Timezone'"),
-    ("'-XMP-photoshop:DateCreated<`${XMP-photoshop:DateCreated}s$Timezone'"),
-    ("'-XMP-xmp:CreateDate<`${XMP-xmp:CreateDate}s$Timezone'"),
-    ("'-XMP-exif:DateTimeOriginal<`${XMP-exif:DateTimeOriginal}s$Timezone'"),
-    '-overwrite_original'
-) -join ' '
+# Process each file individually
+foreach ($file in $files) {
+    Write-Host "Processing: $($file.FullName)"
+    
+    # Check if XMP-photoshop:DateCreated and XMP-xmp:CreateDate exist
+    $xmpCheck = & exiftool -s -XMP-photoshop:DateCreated -XMP-xmp:CreateDate "$($file.FullName)" 2>$null
+    
+    $hasXmpPhotoshop = $xmpCheck -match 'XMP-photoshop:DateCreated'
+    $hasXmpXmp = $xmpCheck -match 'XMP-xmp:CreateDate'
+    
+    # If either XMP field is missing, copy from ExifIFD:DateTimeOriginal
+    if (-not $hasXmpPhotoshop -or -not $hasXmpXmp) {
+        Write-Host "  → Populating missing XMP date fields from ExifIFD:DateTimeOriginal"
+        & exiftool -overwrite_original `
+            "-XMP-photoshop:DateCreated<ExifIFD:DateTimeOriginal" `
+            "-XMP-xmp:CreateDate<ExifIFD:DateTimeOriginal" `
+            "$($file.FullName)" 2>$null
+    }
+    
+    # Apply timezone offset to all datetime fields
+    Write-Host "  → Applying timezone offset: $Timezone"
+    & exiftool -overwrite_original `
+        "-OffsetTime*=$Timezone" `
+        "-XMP-photoshop:DateCreated<`${XMP-photoshop:DateCreated}s$Timezone" `
+        "-XMP-xmp:CreateDate<`${XMP-xmp:CreateDate}s$Timezone" `
+        "-XMP-exif:DateTimeOriginal<`${ExifIFD:DateTimeOriginal}s$Timezone" `
+        "$($file.FullName)" 2>&1 | ForEach-Object { Write-Host "    $_" }
+}
 
-Write-Output "Running command: $exifCommand"
-Invoke-Expression $exifCommand
+Write-Host ""
+Write-Host "Timezone update completed!"
