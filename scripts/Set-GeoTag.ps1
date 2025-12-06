@@ -197,8 +197,7 @@ function Write-MetadataRule1 {
         '-overwrite_original',
         '-charset', 'Filename=UTF8',
         '-charset', 'EXIF=UTF8',
-        '-charset', 'IPTC=UTF8',
-        '-charset', 'XMP=UTF8'
+        '-charset', 'IPTC=UTF8'
     )
 
     #
@@ -293,8 +292,7 @@ function Write-MetadataRule2 {
         '-overwrite_original',
         '-charset', 'Filename=UTF8',
         '-charset', 'EXIF=UTF8',
-        '-charset', 'IPTC=UTF8',
-        '-charset', 'XMP=UTF8'
+        '-charset', 'IPTC=UTF8'
     )
 
     #
