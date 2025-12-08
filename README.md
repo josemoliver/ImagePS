@@ -12,8 +12,9 @@ ImagePS is a collection of PowerShell utilities designed to batch process image 
 - **Creator & Copyright Management** - Batch set creator and copyright information
 - **Unique ID Assignment** - Assign random GUIDs to image files automatically
 - **Timezone Offset Correction** - Update datetime and timezone metadata across images
+- **Photo Time Synchronization** - Correct camera clock errors using reference images
 - **Geolocation Tagging** - Match GPS coordinates to locations and add location metadata
-- **Lens Metadata** - Apply lens information based on camera Make/Model/LensID
+- **Lens Metadata** - Add Microsoft XMP lens information to files based on camera Make/Model/LensID
 - **Weather Annotation** - Tag images with weather data based on photo timestamp
 
 ## Requirements
@@ -86,6 +87,39 @@ Updates timezone offset metadata across EXIF and XMP datetime fields. Useful for
 
 ---
 
+### Sync-PhotoTime.ps1
+
+Synchronizes photo timestamps across a collection by calculating the time difference between a reference image and its correct time, then applying that correction to all images.
+
+**Parameters:**
+- `-BaseFile` (required): Reference image file (e.g., photo of a clock showing correct time)
+- `-CorrectDate` (required): The correct date in `yyyy-MM-dd` format
+- `-CorrectTime` (required): The correct time in `HH:mm:ss` format (24-hour)
+- `-FilePath` (required): Directory containing images to synchronize, or single file path
+
+**Workflow:**
+1. Extracts EXIF DateTimeOriginal from the reference image
+2. Calculates time delta between actual and correct time
+3. Prompts user to Accept, Dry run, or Cancel
+4. Updates all datetime fields conditionally across EXIF, IPTC, and XMP
+5. Preserves timezone offsets if present
+
+**Example:**
+```powershell
+.\Sync-PhotoTime.ps1 -BaseFile "C:\Photos\IMG_0001.JPG" -CorrectDate "2025-12-07" -CorrectTime "14:23:00" -FilePath "C:\Photos"
+```
+
+**Updated Fields:**
+- Always: `ExifIFD:DateTimeOriginal/CreateDate/ModifyDate`, `XMP-photoshop:DateCreated`, `XMP-xmp:CreateDate/MetadataDate/ModifyDate`
+- Conditional: `IPTC:DateCreated/TimeCreated`, `XMP-tiff:DateTime`, `XMP-exif:DateTimeOriginal/DateTimeDigitized/DateTimeModified`
+- Timezone: `OffsetTime`, `OffsetTimeDigitized` (if OffsetTimeOriginal exists)
+
+**Supported Formats:** JPG, JPEG, JXL, PNG, TIF, TIFF, HEIC, HEIF, ARW, CR2, CR3, NEF, RW2, ORF, RAF, DNG, WEBP
+
+**Requirements:** PowerShell 7+
+
+---
+
 ### Set-GeoTag.ps1
 
 Matches GPS coordinates in image files to nearest locations from a locations database and writes location metadata tags.
@@ -146,9 +180,11 @@ Annotates images with weather data (temperature, humidity, pressure) by matching
 .\Set-WeatherTags.ps1 -FilePath "C:\Photos" -Write
 ```
 
-**Supported Formats:** JPG, JPEG, HEIC
+**Supported Formats:** JPG, JPEG, JXL, PNG, TIF, TIFF, HEIC, HEIF, ARW, CR2, CR3, NEF, RW2, ORF, RAF, DNG, WEBP
 
-**Dependencies:** Requires `weatherhistory.csv` file in the same format as weather API exports
+**Dependencies:** Requires `weatherhistory.csv` file in target directory (CSV format: Date,Time,Temperature,Humidity,Pressure)
+
+**Performance:** Uses batch ExifTool operations for optimal performance with large image collections
 
 ---
 
@@ -199,6 +235,8 @@ Annotates images with weather data (temperature, humidity, pressure) by matching
 | "weatherhistory.csv not found" | Ensure `weatherhistory.csv` exists in target directory (required by `Set-WeatherTags.ps1`) |
 | GPS data not tagged | Verify images contain valid GPS coordinates (latitude/longitude) readable by ExifTool |
 | Weather threshold issues | Adjust `-Threshold` parameter (default 30 minutes) to match your weather data intervals |
+| Date/Time format errors (Sync-PhotoTime) | Use `yyyy-MM-dd` for CorrectDate and `HH:mm:ss` (24-hour) for CorrectTime |
+| "This script requires PowerShell 7" | Install PowerShell 7+ for `Sync-PhotoTime.ps1`: https://github.com/PowerShell/PowerShell/releases |
 
 ## Development
 
