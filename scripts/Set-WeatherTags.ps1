@@ -20,7 +20,8 @@
     PS> .\Set-WeatherTags.ps1 -FilePath "C:\Photos" -Write -Threshold 15
 
 .NOTES
-    Author: Adapted from José Oliver-Didier's WeatherTag (C#)
+    Author: Adapted from José Oliver-Didier's Photo Weather Tag (C#)
+    https://github.com/josemoliver/PhotoWeatherTag
 #>
 
 [CmdletBinding()]
@@ -31,33 +32,64 @@ param(
 
     [switch]$Write,
 
-    [int]$Threshold = 30
-)
+    [int]$Threshold = 30,
 
-# --- Helper classes and functions ---
+    $matchedCount = 0
+    $writtenCount = 0
+    $noPhotoDateCount = 0
+    $noReadingWithinThresholdCount = 0
+    $totalImages = $imageDates.Count
+    $processed = 0
 
-class WeatherReading {
-    [datetime]$ReadingDate
-    [Nullable[Double]]$AmbientTemperature
-    [Nullable[Double]]$Humidity
-    [Nullable[Double]]$Pressure
+    foreach ($img in $imageDates) {
+        $processed++
+        $statusMsg = "Processing $processed of $totalImages - $([System.IO.Path]::GetFileName($img.File))"
+        Write-Progress -Activity "Tagging weather data" -Status $statusMsg -PercentComplete (($processed / $totalImages) * 100)
 
-    WeatherReading([datetime]$date, [Nullable[Double]]$temp, [Nullable[Double]]$hum, [Nullable[Double]]$press) {
-        $this.ReadingDate = $date
-        $this.AmbientTemperature = $temp
-        $this.Humidity = $hum
-        $this.Pressure = $press
+        $nearest = Find-NearestWeather -PhotoDate $img.CreateDate -Readings $readings -ThresholdMinutes $Threshold
+
+        $status = 'NoPhotoDate'
+        if ($img.CreateDate) {
+            $status = if ($nearest) { 'Matched' } else { 'NoReadingWithinThreshold' }
+        }
+
+        $result = [PSCustomObject]@{
+            File               = $img.File
+            PhotoDate          = $img.CreateDate
+            ReadingDate        = if ($nearest) { $nearest.ReadingDate } else { $null }
+            AmbientTemperature = if ($nearest) { $nearest.AmbientTemperature } else { $null }
+            Humidity           = if ($nearest) { $nearest.Humidity } else { $null }
+            Pressure           = if ($nearest) { $nearest.Pressure } else { $null }
+            Status             = $status
+        }
+
+        $tempOut = if ($result.AmbientTemperature -ne $null) { $result.AmbientTemperature } else { '--' }
+        $humOut  = if ($result.Humidity -ne $null) { $result.Humidity } else { '--' }
+        $pressOut= if ($result.Pressure -ne $null) { $result.Pressure } else { '--' }
+
+        Write-Host ("{0} | {1} | Temp={2} °C, Hum={3} %, Press={4} hPa" -f 
+            [System.IO.Path]::GetFileName($img.File),
+            $result.Status,
+            $tempOut,
+            $humOut,
+            $pressOut)
+
+        switch ($status) {
+            'Matched' { $matchedCount++ }
+            'NoPhotoDate' { $noPhotoDateCount++ }
+            'NoReadingWithinThreshold' { $noReadingWithinThresholdCount++ }
+        }
+
+        if ($Write -and $nearest) {
+            Write-WeatherTags -File $img.File -Reading $nearest
+            $writtenCount++
+        }
     }
-}
-
-function Get-ExiftoolVersion {
-    try {
-        $version = & exiftool.exe -ver
-        return [double]$version
-    } catch {
-        Write-Error "Exiftool not found. Please install exiftool.exe and ensure it's in PATH."
-        exit 1
-    }
+    Write-Progress -Activity "Tagging weather data" -Completed
+        $val = [double]::Parse($clean, [System.Globalization.CultureInfo]::InvariantCulture)
+        if ($val -lt $Min -or $val -gt $Max) { return $null }
+        return $val
+    } catch { return $null }
 }
 
 function Parse-ExifDate {
@@ -98,32 +130,32 @@ function Import-WeatherHistory {
 
     if (-not (Test-Path $CsvPath)) { throw "Weather history file not found: $CsvPath" }
 
-    $readings = @()
-    Import-Csv $CsvPath -Header Date,Time,Temp,Humidity,Pressure | ForEach-Object {
-        $rawDate = "$($_.Date) $($_.Time)".Trim()
+    $readings = New-Object System.Collections.Generic.List[WeatherReading]
+    $isFirstRow = $true
+
+    Import-Csv -Path $CsvPath -Header Date,Time,Temp,Humidity,Pressure | ForEach-Object {
+        $rawDate = "$( ($_.Date) ) $( ($_.Time) )".Trim()
         $parsed = $null
         try { $parsed = [datetime]::Parse($rawDate, [System.Globalization.CultureInfo]::InvariantCulture) } catch { $parsed = $null }
 
-        $temp = try {
-            $v = [double]($_.Temp -replace '[^\d\.\-]')
-            if ($v -lt -100 -or $v -gt 150) { $null } else { $v }
-        } catch { $null }
-
-        $hum = try {
-            $v = [double]($_.Humidity -replace '[^\d\.\-]')
-            if ($v -lt 0 -or $v -gt 100) { $null } else { $v }
-        } catch { $null }
-
-        $press = try {
-            $v = [double]($_.Pressure -replace '[^\d\.\-]')
-            if ($v -lt 800 -or $v -gt 1100) { $null } else { $v }
-        } catch { $null }
-
-        if ($parsed) {
-            $readings += [WeatherReading]::new($parsed, $temp, $hum, $press)
+        if ($isFirstRow) {
+            $isFirstRow = $false
+            if (-not $parsed) {
+                Write-Verbose "Header row detected and skipped."
+                return
+            }
         }
+
+        if (-not $parsed) { return }
+
+        $temp = Try-ParseDouble -Input $_.Temp -Min -100 -Max 150
+        $hum  = Try-ParseDouble -Input $_.Humidity -Min 0 -Max 100
+        $press= Try-ParseDouble -Input $_.Pressure -Min 800 -Max 1100
+
+        $readings.Add([WeatherReading]::new($parsed, $temp, $hum, $press))
     }
-    $readings | Sort-Object ReadingDate
+
+    return ($readings | Sort-Object ReadingDate)
 }
 
 function Find-NearestWeather {
@@ -169,8 +201,13 @@ function Write-WeatherTags {
 $version = Get-ExiftoolVersion
 Write-Verbose "Exiftool version $version detected."
 
-$imageFiles = Get-ChildItem -Path $FilePath -Recurse -File |
-    Where-Object { $_.Extension -match '^\.(jpg|jpeg|jxl|tif|tiff|png|heic|heif|arw|cr2|cr3|nef|rw2|orf|raf|dng|webp)$' }
+
+$extensions = @(
+    '.jpg', '.jpeg', '.jxl', '.png', '.tif', '.tiff', '.heic', '.heif', '.arw', '.cr2', '.cr3', '.nef', '.rw2', '.orf', '.raf', '.dng', '.webp'
+)
+
+$imageFiles = Get-ChildItem -Path $FilePath -Recurse:$Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $extensions -contains $_.Extension.ToLower() }
 
 if (-not $imageFiles) {
     Write-Error "No supported image files found in $FilePath"
@@ -181,9 +218,23 @@ $imageDates = Get-ImageDates -Files $imageFiles.FullName
 
 $weatherFile = Join-Path $FilePath 'weatherhistory.csv'
 $readings = Import-WeatherHistory -CsvPath $weatherFile
+if (-not $readings -or $readings.Count -eq 0) {
+    Write-Error "No valid weather readings found in $weatherFile"
+    exit 1
+}
+
+$matchedCount = 0
+$writtenCount = 0
+$noPhotoDateCount = 0
+$noReadingWithinThresholdCount = 0
 
 foreach ($img in $imageDates) {
     $nearest = Find-NearestWeather -PhotoDate $img.CreateDate -Readings $readings -ThresholdMinutes $Threshold
+
+    $status = 'NoPhotoDate'
+    if ($img.CreateDate) {
+        $status = if ($nearest) { 'Matched' } else { 'NoReadingWithinThreshold' }
+    }
 
     $result = [PSCustomObject]@{
         File               = $img.File
@@ -192,12 +243,44 @@ foreach ($img in $imageDates) {
         AmbientTemperature = if ($nearest) { $nearest.AmbientTemperature } else { $null }
         Humidity           = if ($nearest) { $nearest.Humidity } else { $null }
         Pressure           = if ($nearest) { $nearest.Pressure } else { $null }
-        Status             = if ($nearest) { 'Matched' } else { 'NoReadingWithinThreshold' }
+        Status             = $status
     }
 
-    $result
+    $tempOut = if ($result.AmbientTemperature -ne $null) { $result.AmbientTemperature } else { '--' }
+    $humOut  = if ($result.Humidity -ne $null) { $result.Humidity } else { '--' }
+    $pressOut= if ($result.Pressure -ne $null) { $result.Pressure } else { '--' }
+
+    Write-Host ("{0} | {1} | Temp={2} °C, Hum={3} %, Press={4} hPa" -f 
+        [System.IO.Path]::GetFileName($img.File),
+        $result.Status,
+        $tempOut,
+        $humOut,
+        $pressOut)
+
+    switch ($status) {
+        'Matched' { $matchedCount++ }
+        'NoPhotoDate' { $noPhotoDateCount++ }
+        'NoReadingWithinThreshold' { $noReadingWithinThresholdCount++ }
+    }
 
     if ($Write -and $nearest) {
         Write-WeatherTags -File $img.File -Reading $nearest
+        $writtenCount++
     }
 }
+
+Write-Host ""
+Write-Host ('=' * 60)
+Write-Host "SUMMARY"
+Write-Host ('=' * 60)
+Write-Host "Total images processed: $($imageFiles.Count)"
+Write-Host "Weather readings loaded: $($readings.Count)"
+Write-Host "Matched (within $Threshold min threshold): $matchedCount"
+Write-Host "No photo date found: $noPhotoDateCount"
+Write-Host "No reading within threshold: $noReadingWithinThresholdCount"
+if ($Write) {
+    Write-Host "Files written with weather data: $writtenCount"
+} else {
+    Write-Host "Note: Preview mode. Use -Write to save weather data to files."
+}
+Write-Host ('=' * 60)

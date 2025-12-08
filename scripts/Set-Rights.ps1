@@ -133,12 +133,27 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllLines($tempArgsFile, $argLines, $utf8NoBom)
 
 try {
-    foreach ($file in $files) {
-        Write-Host "Updating: $($file.FullName)"
-
-        # Call exiftool with -overwrite_original and -@ argsfile then the filename.
-        # The '--' marks the end of options so filenames starting with '-' are safe.
-        & $exiftool -overwrite_original -@ $tempArgsFile -- "$($file.FullName)" 2>&1 | ForEach-Object { Write-Host $_ }
+    # Collect all file paths to pass to exiftool in a single batch
+    $filePaths = $files | ForEach-Object { $_.FullName }
+    
+    Write-Host "Applying metadata to $($files.Count) files in a single batch..."
+    
+    # Create args file with all file paths appended
+    $argsWithFiles = $argLines + $filePaths
+    
+    # Write complete args file as UTF8 without BOM
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllLines($tempArgsFile, $argsWithFiles, $utf8NoBom)
+    
+    # Call exiftool once with all files and metadata settings
+    $result = & $exiftool -overwrite_original -@ $tempArgsFile 2>&1
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "✓ Successfully updated metadata for $($files.Count) file(s)"
+        $result | ForEach-Object { Write-Host "  $_" }
+    } else {
+        Write-Error "ExifTool batch operation failed with exit code $LASTEXITCODE"
+        $result | ForEach-Object { Write-Host "  $_" }
     }
 }
 finally {

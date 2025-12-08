@@ -111,18 +111,22 @@ Write-Host ""
 foreach ($file in $files) {
     Write-Host "Processing: $($file.FullName)"
     
-    # Check if XMP-photoshop:DateCreated and XMP-xmp:CreateDate exist
-    $xmpCheck = & exiftool -s -XMP-photoshop:DateCreated -XMP-xmp:CreateDate "$($file.FullName)" 2>$null
+    # Check if XMP-photoshop:DateCreated, XMP-xmp:CreateDate, XMP-xmp:MetadataDate, and XMP-xmp:ModifyDate exist
+    $xmpCheck = & exiftool -s -XMP-photoshop:DateCreated -XMP-xmp:CreateDate -XMP-xmp:MetadataDate -XMP-xmp:ModifyDate "$($file.FullName)" 2>$null
     
     $hasXmpPhotoshop = $xmpCheck -match 'XMP-photoshop:DateCreated'
-    $hasXmpXmp = $xmpCheck -match 'XMP-xmp:CreateDate'
+    $hasXmpCreateDate = $xmpCheck -match 'XMP-xmp:CreateDate'
+    $hasXmpMetadataDate = $xmpCheck -match 'XMP-xmp:MetadataDate'
+    $hasXmpModifyDate = $xmpCheck -match 'XMP-xmp:ModifyDate'
     
-    # If either XMP field is missing, copy from ExifIFD:DateTimeOriginal
-    if (-not $hasXmpPhotoshop -or -not $hasXmpXmp) {
+    # If any XMP field is missing, copy from ExifIFD:DateTimeOriginal
+    if (-not $hasXmpPhotoshop -or -not $hasXmpCreateDate -or -not $hasXmpMetadataDate -or -not $hasXmpModifyDate) {
         Write-Host "  → Populating missing XMP date fields from ExifIFD:DateTimeOriginal"
         & exiftool -overwrite_original `
             "-XMP-photoshop:DateCreated<ExifIFD:DateTimeOriginal" `
             "-XMP-xmp:CreateDate<ExifIFD:DateTimeOriginal" `
+            "-XMP-xmp:MetadataDate<ExifIFD:DateTimeOriginal" `
+            "-XMP-xmp:ModifyDate<ExifIFD:DateTimeOriginal" `
             "$($file.FullName)" 2>$null
     }
     
@@ -132,6 +136,8 @@ foreach ($file in $files) {
         "-OffsetTime*=$Timezone" `
         "-XMP-photoshop:DateCreated<`${XMP-photoshop:DateCreated}s$Timezone" `
         "-XMP-xmp:CreateDate<`${XMP-xmp:CreateDate}s$Timezone" `
+        "-XMP-xmp:MetadataDate<`${XMP-xmp:MetadataDate}s$Timezone" `
+        "-XMP-xmp:ModifyDate<`${XMP-xmp:ModifyDate}s$Timezone" `
         "-XMP-exif:DateTimeOriginal<`${ExifIFD:DateTimeOriginal}s$Timezone" `
         "$($file.FullName)" 2>&1 | ForEach-Object { Write-Host "    $_" }
 }
