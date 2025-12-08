@@ -106,7 +106,7 @@ function Read-Locations {
     # IMPORTANT: GeoJSON coordinate order is [longitude, latitude] (reversed from typical lat/lon)
     # See RFC 7946 Section 3.1.1: https://datatracker.ietf.org/doc/html/rfc7946#section-3.1.1
     $loc = [pscustomobject]@{
-      Location        = $feature.properties.Location         # Specific location name (e.g., "Central Park")
+      Location        = $feature.properties.Location        # Specific location name (e.g., "Central Park")
       Latitude        = [double]$coords[1]                  # GeoJSON order: [lon, lat], so index 1 = latitude
       Longitude       = [double]$coords[0]                  # GeoJSON order: [lon, lat], so index 0 = longitude
       City            = $feature.properties.City            # City name
@@ -334,21 +334,60 @@ function Write-MetadataRule1 {
         "-XMP-iptcExt:LocationCreatedCountryName=$($Nearest.Country)"     # Country name
     )
 
-    # ===== LOCATION IDENTIFIERS (STRUCT) =====
+    # ===== LOCATION IDENTIFIERS (STRUCT) WITH DEDUPLICATION =====
     # LocationCreated can store array of LocationId structs for external references
-    # Examples: Wikidata IDs (Q...), GeoNames IDs, Google Place IDs, OSM IDs
+    # Examples: Wikidata IDs (Q...), GeoNames IDs, Foursquare Venues, Google Place IDs, OSM IDs
     # Format: LocationCreated is array of structs with LocationId field
     $structNeeded = $false
     
     # Add LocationIdentifiers if present in GeoJSON
     if ($Nearest.Identifiers -and $Nearest.Identifiers.Count -gt 0) {
-        $structNeeded = $true
+        # Read existing LocationCreated structs to prevent duplicates
+        # -struct: Enable struct output mode
+        # -j: JSON format for reliable parsing
+        # -XMP-iptcExt:LocationCreated: Only read this field
+        $existingJson = & exiftool -struct -j -XMP-iptcExt:LocationCreated "$Path" 2>$null
+        $existingIds = @()
         
-        # Append each identifier as separate LocationCreated struct element
-        # += syntax adds new element to array struct
-        foreach ($id in $Nearest.Identifiers) {
-            if ([string]::IsNullOrWhiteSpace($id)) { continue }
-            $lines += "-XMP-iptcExt:LocationCreated+={LocationId=$id}"
+        if ($existingJson) {
+            try {
+                $existingData = $existingJson | ConvertFrom-Json
+                if ($existingData -and $existingData.Count -gt 0) {
+                    $locationCreated = $existingData[0].LocationCreated
+                    # Handle both single struct and array of structs
+                    if ($locationCreated) {
+                        if ($locationCreated -is [array]) {
+                            # Array of structs: extract LocationId from each
+                            $existingIds = $locationCreated | ForEach-Object { 
+                                if ($_.LocationId) { $_.LocationId } 
+                            }
+                        } elseif ($locationCreated.LocationId) {
+                            # Single struct: extract LocationId
+                            $existingIds = @($locationCreated.LocationId)
+                        }
+                    }
+                }
+            } catch {
+                # If parsing fails, assume no existing identifiers
+                $existingIds = @()
+            }
+        }
+        
+        # Filter out identifiers that already exist in the image
+        # Case-sensitive comparison to preserve exact URLs
+        $newIds = $Nearest.Identifiers | Where-Object { 
+            -not [string]::IsNullOrWhiteSpace($_) -and $existingIds -notcontains $_
+        }
+        
+        # Only add identifiers if there are new ones to add
+        if ($newIds -and $newIds.Count -gt 0) {
+            $structNeeded = $true
+            
+            # Append each new identifier as separate LocationCreated struct element
+            # += syntax adds new element to array struct without removing existing ones
+            foreach ($id in $newIds) {
+                $lines += "-XMP-iptcExt:LocationCreated+={LocationId=$id}"
+            }
         }
     }
 
