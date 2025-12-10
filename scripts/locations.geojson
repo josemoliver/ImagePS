@@ -1,9 +1,9 @@
 {
   "type": "FeatureCollection",
+  "name": "locations",
   "features": [
     {
       "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-73.9855, 40.7580] },
       "properties": {
         "Location": "Times Square",
         "City": "New York",
@@ -15,27 +15,59 @@
           "https://www.nycgo.com/attractions/times-square",
           "urn:location:times-square"
         ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.9855,
+          40.758
+        ]
       }
     },
     {
       "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-73.9654, 40.7829] },
       "properties": {
         "Location": "Central Park",
         "City": "New York",
         "StateProvince": "New York",
         "Country": "United States",
         "CountryCode": "USA",
-        "Radius": 1000,
+        "Radius": 400,
         "LocationIdentifiers": [
           "https://www.centralparknyc.org/",
           "urn:location:central-park"
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -73.95812112240604,
+              40.800499479240464
+            ],
+            [
+              -73.98165362695666,
+              40.76813285883531
+            ],
+            [
+              -73.97305652396653,
+              40.76446993274929
+            ],
+            [
+              -73.94942346850374,
+              40.796854508674485
+            ],
+            [
+              -73.95812112240604,
+              40.800499479240464
+            ]
+          ]
         ]
       }
     },
     {
       "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-74.0445, 40.6892] },
       "properties": {
         "Location": "Statue of Liberty",
         "City": "New York",
@@ -47,11 +79,17 @@
           "https://www.nps.gov/stli/index.htm",
           "urn:location:statue-of-liberty"
         ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -74.0445,
+          40.6892
+        ]
       }
     },
     {
       "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-73.9857, 40.7484] },
       "properties": {
         "Location": "Empire State Building",
         "City": "New York",
@@ -63,11 +101,17 @@
           "https://www.esbnyc.com/",
           "urn:location:empire-state-building"
         ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.9857,
+          40.7484
+        ]
       }
     },
     {
       "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-73.9969, 40.7061] },
       "properties": {
         "Location": "Brooklyn Bridge",
         "City": "New York",
@@ -79,11 +123,17 @@
           "https://www.nycgo.com/attractions/brooklyn-bridge",
           "urn:location:brooklyn-bridge"
         ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.9969,
+          40.7061
+        ]
       }
     },
     {
       "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-73.9787, 40.7587] },
       "properties": {
         "Location": "Rockefeller Center",
         "City": "New York",
@@ -95,11 +145,17 @@
           "https://www.rockefellercenter.com/",
           "urn:location:rockefeller-center"
         ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.9787,
+          40.7587
+        ]
       }
     },
     {
       "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-74.0134, 40.7127] },
       "properties": {
         "Location": "One World Trade Center",
         "City": "New York",
@@ -111,27 +167,17 @@
           "https://www.oneworldobservatory.com/",
           "urn:location:one-world-trade-center"
         ]
-      }
-    },
-    {
-      "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-73.9632, 40.7794] },
-      "properties": {
-        "Location": "Metropolitan Museum of Art",
-        "City": "New York",
-        "StateProvince": "New York",
-        "Country": "United States",
-        "CountryCode": "USA",
-        "Radius": 200,
-        "LocationIdentifiers": [
-          "https://www.metmuseum.org/",
-          "urn:location:metropolitan-museum-of-art"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -74.0134,
+          40.7127
         ]
       }
     },
     {
       "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-73.9845, 40.7590] },
       "properties": {
         "Location": "Broadway Theater District",
         "City": "New York",
@@ -143,11 +189,17 @@
           "https://www.nycgo.com/articles/broadway-theater-district",
           "urn:location:broadway-theater-district"
         ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.9845,
+          40.759
+        ]
       }
     },
     {
       "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-73.9772, 40.7527] },
       "properties": {
         "Location": "Grand Central Terminal",
         "City": "New York",
@@ -159,6 +211,55 @@
           "https://www.grandcentralterminal.com/",
           "urn:location:grand-central-terminal"
         ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.9772,
+          40.7527
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "Location": "Metropolitan Museum of Art",
+        "City": "New York",
+        "StateProvince": "New York",
+        "Country": "United States",
+        "CountryCode": "USA",
+        "Radius": 200,
+        "LocationIdentifiers": [
+          "https://www.metmuseum.org/",
+          "urn:location:metropolitan-museum-of-art"
+        ]
+      },
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -73.96527081621414,
+              40.778582317125085
+            ],
+            [
+              -73.96335743847291,
+              40.77777428033636
+            ],
+            [
+              -73.96146245859408,
+              40.78036553594697
+            ],
+            [
+              -73.96343102992412,
+              40.781103885975625
+            ],
+            [
+              -73.96527081621414,
+              40.778582317125085
+            ]
+          ]
+        ],
+        "type": "Polygon"
       }
     }
   ]

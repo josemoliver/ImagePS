@@ -75,6 +75,9 @@ $ErrorActionPreference = "Stop"
 # Assumes exiftool is in system PATH; can be overridden to full path if needed
 $exiftool = "exiftool"
 
+# Track script start time for duration reporting
+$__scriptStart = Get-Date
+
 try {
     # ===== PATH VALIDATION =====
     # Validate target directory exists before processing
@@ -213,6 +216,11 @@ try {
         Write-Host "Nothing to do."
     }
     else {
+        # Initialize summary counters
+        $modifiedCount = 0                 # Images successfully modified
+        $errorCount    = 0                 # Images not modified due to errors
+        $alreadyHadIdCount = ($total - $needCount)  # Images that already had an ImageUniqueID
+
         # ===== PARALLEL MODE (POWERSHELL 7+ ONLY) =====
         # Uses ForEach-Object -Parallel to process multiple files concurrently
         # Faster for large collections but requires PowerShell 7+
@@ -233,9 +241,10 @@ try {
                 
                 # Execute ExifTool to write ImageUniqueID
                 # $using: syntax accesses parent scope variable in parallel scriptblock
+                # -m: Ignore minor warnings (e.g., namespace fixups) and treat as success
                 # -overwrite_original: Modify file in-place (no backup)
                 # 2>&1: Capture both stdout and stderr for error handling
-                $res = & $using:exiftool -overwrite_original "-ImageUniqueID=$guid" $file 2>&1
+                $res = & $using:exiftool -m -overwrite_original "-ImageUniqueID=$guid" $file 2>&1
                 
                 # Return result string for collection
                 # Format: "OK|filepath|guid" or "ERR|filepath|exitcode|message"
@@ -249,9 +258,26 @@ try {
             }
             
             # Count successes and failures from result strings
-            $ok = ($results | Where-Object { $_ -like 'OK|*' }).Count
-            $err = ($results | Where-Object { $_ -like 'ERR|*' }).Count
-            Write-Host "Completed parallel writes. Successes: $ok, Failures: $err"
+            $modifiedCount = ($results | Where-Object { $_ -like 'OK|*' }).Count
+            $errorCount    = ($results | Where-Object { $_ -like 'ERR|*' }).Count
+            
+            # Output detailed errors but continue (ignore terminating)
+            $errLines = $results | Where-Object { $_ -like 'ERR|*' }
+            foreach ($line in $errLines) {
+                $parts = $line -split '\|', 4
+                $efile = if ($parts.Count -ge 2) { $parts[1] } else { '<unknown>' }
+                $ecode = if ($parts.Count -ge 3) { $parts[2] } else { '<n/a>' }
+                $emsg  = if ($parts.Count -ge 4) { $parts[3] } else { '' }
+                Write-Warning ("Error writing ImageUniqueID (exit {0}) for: {1}" -f $ecode, $efile)
+                if (-not [string]::IsNullOrWhiteSpace($emsg)) {
+                    $emsg -split "`r?`n" | ForEach-Object { Write-Host ("    $_") }
+                }
+            }
+            
+            Write-Host "Completed parallel writes. Successes: $modifiedCount, Failures: $errorCount"
+            
+            # Ensure script doesn't exit with exiftool's non-zero code from parallel tasks
+            $global:LASTEXITCODE = 0
         }
         else {
             # ===== SERIAL BATCH MODE =====
@@ -304,6 +330,7 @@ try {
                         # ...
                         $argLines = New-Object System.Collections.ArrayList
                         [void]$argLines.Add("-overwrite_original")  # Global option for batch
+                        [void]$argLines.Add("-m")                  # Ignore minor warnings to avoid false error states
                         
                         # Add file-specific arguments
                         for ($i = 0; $i -lt $writeBatch.Count; $i++) {
@@ -329,14 +356,45 @@ try {
                         # 2>&1: Capture both stdout and stderr for error reporting
                         $result = & $exiftool -@ $tmpArgs 2>&1
                         
-                        # Check for errors
+                        # Check for errors – log and continue (do not terminate)
                         if ($LASTEXITCODE -ne 0) {
-                            Write-Error "Batch write failed: $result"
-                        } else {
-                            # Display success for each file in batch
-                            for ($i = 0; $i -lt $writeBatch.Count; $i++) {
-                                Write-Host "→ Set GUID $($writeBatchGuids[$i]) for: $($writeBatch[$i])"
+                            Write-Warning "Batch write failed (exit $LASTEXITCODE). Details:" 
+                            ($result -split "`r?`n") | ForEach-Object { if (-not [string]::IsNullOrWhiteSpace($_)) { Write-Host ("    $_") } }
+                        }
+                        
+                        # Prevent non-zero exiftool exit code from propagating to the script
+                        $global:LASTEXITCODE = 0
+
+                        # ===== VERIFY WRITES FOR THIS BATCH =====
+                        # Build temp file listing this batch to re-read ImageUniqueID and verify updated values
+                        $verifyList = [System.IO.Path]::GetTempFileName()
+                        try {
+                            [System.IO.File]::WriteAllLines($verifyList, $writeBatch, (New-Object System.Text.UTF8Encoding($false)))
+                            $verifyJson = & $exiftool -j -ImageUniqueID -@ $verifyList 2>$null
+                            if ($verifyJson) {
+                                try { $verifyObjs = $verifyJson | ConvertFrom-Json } catch { $verifyObjs = @() }
+                                # Build expected map for quick lookup
+                                $expectedMap = @{}
+                                for ($i = 0; $i -lt $writeBatch.Count; $i++) { $expectedMap[$writeBatch[$i]] = $writeBatchGuids[$i] }
+                                foreach ($vo in $verifyObjs) {
+                                    $p = $vo.SourceFile
+                                    $expected = $expectedMap[$p]
+                                    $actual = $vo.ImageUniqueID
+                                    if ($null -ne $expected -and -not [string]::IsNullOrWhiteSpace($expected) -and $actual -eq $expected) {
+                                        $modifiedCount++
+                                        Write-Host "→ Set GUID $expected for: $p"
+                                    } else {
+                                        $errorCount++
+                                        Write-Warning "Write verification failed for: $p"
+                                    }
+                                }
+                            } else {
+                                # If verification could not run, conservatively count entire batch as errors
+                                $errorCount += $writeBatch.Count
+                                Write-Warning "Verification failed: no JSON returned for batch of $($writeBatch.Count) files."
                             }
+                        } finally {
+                            if (Test-Path $verifyList) { Remove-Item $verifyList -ErrorAction SilentlyContinue }
                         }
                     }
                     finally {
@@ -352,9 +410,16 @@ try {
                 }
             }
             
-            # ===== COMPLETION MESSAGE =====
+            # ===== COMPLETION SUMMARY =====
             Write-Host ""
-            Write-Host "Completed. Wrote ImageUniqueID to $needCount file(s)."
+            $elapsed = (Get-Date) - $__scriptStart
+            $duration = '{0:hh\:mm\:ss}' -f $elapsed
+            Write-Host "===== ImageUniqueID Summary ====="
+            Write-Host ("Images modified                          : {0}" -f $modifiedCount)
+            Write-Host ("Images not modified (already had ID)     : {0}" -f $alreadyHadIdCount)
+            Write-Host ("Images not modified due to errors        : {0}" -f $errorCount)
+            Write-Host ("Total images scanned                     : {0}" -f $total)
+            Write-Host ("Total script execution duration          : {0}" -f $duration)
         }
     }
 

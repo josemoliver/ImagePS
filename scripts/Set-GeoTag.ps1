@@ -70,8 +70,10 @@ function Get-LocationsJsonPath {
 }
 
 # Parse locations.geojson and extract location database
-# GeoJSON format: FeatureCollection with Point geometries and custom properties
+# GeoJSON format: FeatureCollection with Point or Polygon geometries and custom properties
 # Each feature represents a known location with radius and metadata
+# Point features: Use coordinates directly
+# Polygon features: Calculate centroid for distance matching
 function Read-Locations {
   param([string]$JsonPath)
   
@@ -96,30 +98,90 @@ function Read-Locations {
       continue
     }
 
-    # Extract coordinates from Point geometry
+    $geomType = $feature.geometry.type
     $coords = $feature.geometry.coordinates
-    if (-not $coords -or $coords.Count -lt 2) {
+    
+    # Initialize location coordinates
+    $lat = $null
+    $lon = $null
+    $polygon = $null
+
+    if ($geomType -eq 'Point') {
+      # ===== POINT GEOMETRY =====
+      # Extract coordinates from Point geometry
+      if (-not $coords -or $coords.Count -lt 2) {
+        continue
+      }
+      # GeoJSON coordinate order is [longitude, latitude] (reversed from typical lat/lon)
+      # See RFC 7946 Section 3.1.1: https://datatracker.ietf.org/doc/html/rfc7946#section-3.1.1
+      $lon = [double]$coords[0]
+      $lat = [double]$coords[1]
+    }
+    elseif ($geomType -eq 'Polygon') {
+      # ===== POLYGON GEOMETRY =====
+      # Polygon coordinates: Array of linear rings (first = exterior, rest = holes)
+      # Each ring: Array of [lon, lat] positions
+      # First and last position must be identical (closed ring)
+      if (-not $coords -or $coords.Count -eq 0 -or $coords[0].Count -lt 3) {
+        continue  # Invalid polygon (need at least 3 vertices)
+      }
+      
+      # Extract exterior ring (first element)
+      $exteriorRing = $coords[0]
+      
+      # Store polygon coordinates for point-in-polygon testing
+      # Convert to array of [lon, lat] pairs
+      $polygon = @()
+      foreach ($point in $exteriorRing) {
+        if ($point.Count -ge 2) {
+          $polygon += ,@([double]$point[0], [double]$point[1])
+        }
+      }
+      
+      # Calculate centroid of polygon for distance matching
+      # Centroid = average of all vertices (simple approximation for small polygons)
+      # More accurate for convex polygons; acceptable for typical location boundaries
+      $sumLon = 0.0
+      $sumLat = 0.0
+      $count = 0
+      foreach ($point in $exteriorRing) {
+        if ($point.Count -ge 2) {
+          $sumLon += [double]$point[0]
+          $sumLat += [double]$point[1]
+          $count++
+        }
+      }
+      
+      if ($count -gt 0) {
+        $lon = $sumLon / $count
+        $lat = $sumLat / $count
+      } else {
+        continue  # No valid points in polygon
+      }
+    }
+    else {
+      # Unsupported geometry type (LineString, MultiPoint, etc.)
       continue
     }
 
     # Build location object from GeoJSON feature
-    # IMPORTANT: GeoJSON coordinate order is [longitude, latitude] (reversed from typical lat/lon)
-    # See RFC 7946 Section 3.1.1: https://datatracker.ietf.org/doc/html/rfc7946#section-3.1.1
     $loc = [pscustomobject]@{
-      Location        = $feature.properties.Location         # Specific location name (e.g., "Central Park")
-      Latitude        = [double]$coords[1]                  # GeoJSON order: [lon, lat], so index 1 = latitude
-      Longitude       = [double]$coords[0]                  # GeoJSON order: [lon, lat], so index 0 = longitude
+      Location        = $feature.properties.Location        # Specific location name (e.g., "Central Park")
+      Latitude        = $lat                                # Point: actual coords, Polygon: centroid latitude
+      Longitude       = $lon                                # Point: actual coords, Polygon: centroid longitude
       City            = $feature.properties.City            # City name
       StateProvince   = $feature.properties.StateProvince   # State/Province/Region
       Country         = $feature.properties.Country         # Country name
-      CountryCode     = $feature.properties.CountryCode     # ISO 3166-1 alpha-2 code (e.g., "US", "CA")
-      Radius          = [double]$feature.properties.Radius  # Effective radius in meters for Rule 1 matching
+      CountryCode     = $feature.properties.CountryCode     # ISO 3166-1 alpha-3 code (e.g., "USA", "CAN")
+      Radius          = if ($feature.properties.Radius) { [double]$feature.properties.Radius } else { 50.0 }  # Default 50m if missing/empty
       LocationIdentifiers = $feature.properties.LocationIdentifiers  # Optional array of identifiers (URLs, codes)
+      GeometryType    = $geomType                           # 'Point' or 'Polygon'
+      Polygon         = $polygon                            # Polygon coordinates (null for Point)
     }
 
     # Validate required fields are present
-    # LocationIdentifiers is optional, all others are mandatory
-    foreach ($field in 'Location','Latitude','Longitude','City','StateProvince','Country','Radius') {
+    # LocationIdentifiers and Radius are optional (Radius defaults to 50m), all others are mandatory
+    foreach ($field in 'Location','Latitude','Longitude','City','StateProvince','Country') {
       if (-not $loc.$field) {
         throw "GeoJSON missing field '$field' in one or more features."
       }
@@ -227,38 +289,170 @@ function Get-DistanceMeters {
   return $R * $c
 }
 
+# Test if a point is inside a polygon using ray casting algorithm
+# Algorithm: Cast horizontal ray from point to infinity, count polygon edge crossings
+# Odd number of crossings = inside, even number = outside
+# Works for any simple polygon (convex or concave, but not self-intersecting)
+function Test-PointInPolygon {
+  param(
+    [double]$Lat,      # Test point latitude
+    [double]$Lon,      # Test point longitude
+    [array]$Polygon    # Array of [lon, lat] coordinate pairs
+  )
+  
+  if (-not $Polygon -or $Polygon.Count -lt 3) {
+    return $false  # Invalid polygon
+  }
+  
+  $inside = $false
+  $n = $Polygon.Count
+  
+  # Ray casting: count how many polygon edges the ray crosses
+  # Ray goes from (Lon, Lat) horizontally to the right (increasing longitude)
+  for ($i = 0; $i -lt $n; $i++) {
+    # Get current edge: vertex i to vertex j (wraps around to 0)
+    $j = ($i + 1) % $n
+    
+    $lon1 = $Polygon[$i][0]
+    $lat1 = $Polygon[$i][1]
+    $lon2 = $Polygon[$j][0]
+    $lat2 = $Polygon[$j][1]
+    
+    # Check if ray crosses this edge
+    # Conditions:
+    # 1. Edge spans the ray's latitude: (lat1 > Lat) != (lat2 > Lat)
+    # 2. Ray's longitude is left of the edge's intersection with ray's latitude
+    if ((($lat1 -gt $Lat) -ne ($lat2 -gt $Lat)) -and
+        ($Lon -lt ($lon2 - $lon1) * ($Lat - $lat1) / ($lat2 - $lat1) + $lon1)) {
+      $inside = -not $inside  # Toggle inside/outside
+    }
+  }
+  
+  return $inside
+}
 
-# Find nearest location from database using brute-force distance comparison
-# Algorithm: Calculate distance to all locations, return closest match
-# For large databases, consider spatial indexing (quadtree, R-tree)
+
+# Find nearest location from database with polygon support
+# Algorithm: Prioritize Point features over Polygon features for specificity
+# 1. Check if point is inside any polygons (track all containing polygons)
+# 2. Find nearest Point feature (if any exist)
+# 3. If nearest Point is inside a containing polygon AND within its radius, use Point (more specific)
+# 4. Otherwise, use containing polygon with nearest centroid (broader area match)
+# 5. If no containing polygons, use nearest location by distance (Point or Polygon centroid)
 function Find-NearestLocation {
   param(
     [double]$Lat, [double]$Lon,  # Image GPS coordinates
     [object[]]$Locations          # Location database from GeoJSON
   )
   
-  $best = $null  # Track closest location found so far
+  $best = $null              # Track closest location found so far
+  $containingPolygons = @()  # Track all polygons that contain the point
+  $nearestPoint = $null      # Track nearest Point feature
   
-  # Iterate through all locations to find minimum distance
-  # O(N) complexity: acceptable for small-to-medium databases (<1000 locations)
+  # ===== PASS 1: FIND ALL CONTAINING POLYGONS AND NEAREST POINT =====
+  # Check if point is inside any polygon geometries and find nearest Point
+  foreach ($loc in $Locations) {
+    if ($loc.GeometryType -eq 'Polygon' -and $loc.Polygon) {
+      # Test if point is inside this polygon
+      if (Test-PointInPolygon -Lat $Lat -Lon $Lon -Polygon $loc.Polygon) {
+        # Calculate distance to centroid for ranking overlapping polygons
+        $dist = Get-DistanceMeters -Lat1 $Lat -Lon1 $Lon -Lat2 $loc.Latitude -Lon2 $loc.Longitude
+        
+        # Store polygon with distance to centroid
+        $containingPolygons += [pscustomobject]@{
+          Location      = $loc
+          CentroidDist  = $dist
+        }
+      }
+    }
+    elseif ($loc.GeometryType -eq 'Point') {
+      # Calculate distance to Point feature
+      $dist = Get-DistanceMeters -Lat1 $Lat -Lon1 $Lon -Lat2 $loc.Latitude -Lon2 $loc.Longitude
+      
+      # Track nearest Point feature
+      if (-not $nearestPoint -or $dist -lt $nearestPoint.Distance) {
+        $nearestPoint = [pscustomobject]@{
+          Location = $loc
+          Distance = $dist
+        }
+      }
+    }
+  }
+  
+  # ===== HANDLE POINT INSIDE POLYGON(S) WITH PRIORITY LOGIC =====
+  # Priority: Point features (specific locations) take precedence over Polygons (areas)
+  # if the Point is inside a polygon AND within its effective radius
+  if ($containingPolygons.Count -gt 0) {
+    # Check if nearest Point feature should override polygon match
+    # Conditions: 1) Point exists, 2) Point is within its defined radius (high confidence)
+    if ($nearestPoint -and $nearestPoint.Distance -le $nearestPoint.Location.Radius) {
+      # Point feature is more specific than polygon - use it instead
+      $loc = $nearestPoint.Location
+      
+      return [pscustomobject]@{
+        Location      = $loc.Location
+        Latitude      = $loc.Latitude
+        Longitude     = $loc.Longitude
+        City          = $loc.City
+        StateProv     = $loc.StateProvince
+        Country       = $loc.Country
+        CountryCode   = $loc.CountryCode
+        Radius        = $loc.Radius
+        Identifiers   = @($loc.LocationIdentifiers)
+        Distance      = $nearestPoint.Distance
+        GeometryType  = $loc.GeometryType
+        InsidePolygon = $false           # Using Point match, not polygon
+      }
+    }
+    
+    # No Point feature within radius - use containing polygon
+    # Sort by centroid distance and select closest polygon
+    $nearestContaining = $containingPolygons | Sort-Object -Property CentroidDist | Select-Object -First 1
+    $loc = $nearestContaining.Location
+    
+    # Build result object with polygon metadata
+    # Distance = 0 since point is inside polygon (exact match)
+    return [pscustomobject]@{
+      Location    = $loc.Location
+      Latitude    = $loc.Latitude      # Centroid latitude
+      Longitude   = $loc.Longitude     # Centroid longitude
+      City        = $loc.City
+      StateProv   = $loc.StateProvince
+      Country     = $loc.Country
+      CountryCode = $loc.CountryCode
+      Radius      = $loc.Radius
+      Identifiers = @($loc.LocationIdentifiers)
+      Distance    = 0.0                # Inside polygon = distance 0
+      GeometryType = $loc.GeometryType
+      InsidePolygon = $true            # Flag for Rule 1 logic
+    }
+  }
+  
+  # ===== PASS 2: FIND NEAREST LOCATION BY DISTANCE (NO CONTAINING POLYGONS) =====
+  # Point is not inside any polygon
+  # Find nearest location by distance to centroid (Point or Polygon)
   foreach ($loc in $Locations) {
     # Calculate great-circle distance using Haversine formula
-    $dist = Get-DistanceMeters -Lat1 $Lat -Lon1 $Lon -Lat2 ([double]$loc.Latitude) -Lon2 ([double]$loc.Longitude)
+    # For Points: distance to actual point
+    # For Polygons: distance to centroid
+    $dist = Get-DistanceMeters -Lat1 $Lat -Lon1 $Lon -Lat2 $loc.Latitude -Lon2 $loc.Longitude
     
     # Update best match if this is the first location or closer than previous best
     if (-not $best -or $dist -lt $best.Distance) {
       # Create result object with location metadata and calculated distance
       $best = [pscustomobject]@{
-        Location  = $loc.Location
-        Latitude  = [double]$loc.Latitude
-        Longitude = [double]$loc.Longitude
-        City      = $loc.City
-        StateProv = $loc.StateProvince
-        Country   = $loc.Country
-        CountryCode = $loc.CountryCode
-        Radius    = [double]$loc.Radius           # Effective radius for Rule 1
-        Identifiers = @($loc.LocationIdentifiers) # Array of location IDs (may be $null)
-        Distance  = [double]$dist                 # Calculated distance in meters
+        Location      = $loc.Location
+        Latitude      = $loc.Latitude      # Point coords or Polygon centroid
+        Longitude     = $loc.Longitude
+        City          = $loc.City
+        StateProv     = $loc.StateProvince
+        Country       = $loc.Country
+        CountryCode   = $loc.CountryCode
+        Radius        = $loc.Radius
+        Identifiers   = @($loc.LocationIdentifiers)
+        Distance      = $dist
+        GeometryType  = $loc.GeometryType
+        InsidePolygon = $false             # Not inside any polygon
       }
     }
   }
@@ -334,21 +528,60 @@ function Write-MetadataRule1 {
         "-XMP-iptcExt:LocationCreatedCountryName=$($Nearest.Country)"     # Country name
     )
 
-    # ===== LOCATION IDENTIFIERS (STRUCT) =====
+    # ===== LOCATION IDENTIFIERS (STRUCT) WITH DEDUPLICATION =====
     # LocationCreated can store array of LocationId structs for external references
-    # Examples: Wikidata IDs (Q...), GeoNames IDs, Google Place IDs, OSM IDs
+    # Examples: Wikidata IDs (Q...), GeoNames IDs, Foursquare Venues, Google Place IDs, OSM IDs
     # Format: LocationCreated is array of structs with LocationId field
     $structNeeded = $false
     
     # Add LocationIdentifiers if present in GeoJSON
     if ($Nearest.Identifiers -and $Nearest.Identifiers.Count -gt 0) {
-        $structNeeded = $true
+        # Read existing LocationCreated structs to prevent duplicates
+        # -struct: Enable struct output mode
+        # -j: JSON format for reliable parsing
+        # -XMP-iptcExt:LocationCreated: Only read this field
+        $existingJson = & exiftool -struct -j -XMP-iptcExt:LocationCreated "$Path" 2>$null
+        $existingIds = @()
         
-        # Append each identifier as separate LocationCreated struct element
-        # += syntax adds new element to array struct
-        foreach ($id in $Nearest.Identifiers) {
-            if ([string]::IsNullOrWhiteSpace($id)) { continue }
-            $lines += "-XMP-iptcExt:LocationCreated+={LocationId=$id}"
+        if ($existingJson) {
+            try {
+                $existingData = $existingJson | ConvertFrom-Json
+                if ($existingData -and $existingData.Count -gt 0) {
+                    $locationCreated = $existingData[0].LocationCreated
+                    # Handle both single struct and array of structs
+                    if ($locationCreated) {
+                        if ($locationCreated -is [array]) {
+                            # Array of structs: extract LocationId from each
+                            $existingIds = $locationCreated | ForEach-Object { 
+                                if ($_.LocationId) { $_.LocationId } 
+                            }
+                        } elseif ($locationCreated.LocationId) {
+                            # Single struct: extract LocationId
+                            $existingIds = @($locationCreated.LocationId)
+                        }
+                    }
+                }
+            } catch {
+                # If parsing fails, assume no existing identifiers
+                $existingIds = @()
+            }
+        }
+        
+        # Filter out identifiers that already exist in the image
+        # Case-sensitive comparison to preserve exact URLs
+        $newIds = $Nearest.Identifiers | Where-Object { 
+            -not [string]::IsNullOrWhiteSpace($_) -and $existingIds -notcontains $_
+        }
+        
+        # Only add identifiers if there are new ones to add
+        if ($newIds -and $newIds.Count -gt 0) {
+            $structNeeded = $true
+            
+            # Append each new identifier as separate LocationCreated struct element
+            # += syntax adds new element to array struct without removing existing ones
+            foreach ($id in $newIds) {
+                $lines += "-XMP-iptcExt:LocationCreated+={LocationId=$id}"
+            }
         }
     }
 
@@ -504,16 +737,23 @@ try {
     Write-Host ("[INFO] {0}" -f $f.FullName) -ForegroundColor Gray
     Write-Host ("       GPS: {0}, {1}" -f $gps.Latitude, $gps.Longitude)
     Write-Host ("       Nearest: {0} (City={1}, State={2}, Country={3})" -f $nearest.Location, $nearest.City, $nearest.StateProv, $nearest.Country)
-    Write-Host ("       Distance: {0} m | Radius: {1} m" -f $dist, $radius)
+    Write-Host ("       Geometry: {0} | Distance: {1} m | Radius: {2} m" -f $nearest.GeometryType, $dist, $radius)
 
     # ===== APPLY GEOTAGGING RULES =====
     # Two-tier matching strategy based on distance thresholds
+    # Special case: If inside polygon, always apply Rule 1 regardless of centroid distance
     
-    if ($nearest.Distance -le $nearest.Radius) {
-      # ===== RULE 1: INSIDE LOCATION RADIUS =====
+    if ($nearest.InsidePolygon -or $nearest.Distance -le $nearest.Radius) {
+      # ===== RULE 1: INSIDE POLYGON OR INSIDE LOCATION RADIUS =====
       # High confidence match: Image taken at specific known location
+      # Condition A: Point is inside polygon boundary (distance = 0)
+      # Condition B: Point is within location's effective radius from centroid
       # Write full metadata: Location name, City, State, Country, CountryCode, LocationIdentifiers
-      Write-Host ("       Action: Rule 1 (inside radius) -> set Location, City, StateProvince, Country, CountryCode + LocationIdentifiers") -ForegroundColor Green
+      if ($nearest.InsidePolygon) {
+        Write-Host ("       Action: Rule 1 (inside polygon) -> set Location, City, StateProvince, Country, CountryCode + LocationIdentifiers") -ForegroundColor Green
+      } else {
+        Write-Host ("       Action: Rule 1 (inside radius) -> set Location, City, StateProvince, Country, CountryCode + LocationIdentifiers") -ForegroundColor Green
+      }
       
       if ($Write) {
         # Write mode: Actually modify file metadata
