@@ -13,6 +13,8 @@ ImagePS is a PowerShell utility collection for automating photo metadata operati
 - **`Set-GeoTag.ps1`**: Assigns GPS coordinates to images based on external CSV file lookup
 - **`Set-Lens.ps1`**: Injects lens metadata into images, supporting multiple lens formats
 - **`Set-WeatherTags.ps1`**: Tags images with weather data from CSV file using batch operations
+ - **`Get-NearbyWikidataLocations.ps1`**: Discovers nearby locations from Wikidata (SPARQL) and exports GeoJSON compatible with `Set-GeoTag.ps1`
+ - **`Get-NearbyOSMLocations.ps1`**: Discovers nearby locations from OpenStreetMap (Overpass API) and exports GeoJSON compatible with `Set-GeoTag.ps1`
 
 ### Key Design Patterns
 
@@ -84,6 +86,7 @@ Use `-Recurse` switch consistently for batch operations.
 - **Conditional XMP/IPTC writes**: Check field existence with `exiftool -s -s -s -"FieldName"` before updating
   - Avoids creating unnecessary fields in files that don't have them
   - Used in `Sync-PhotoTime.ps1` and `Set-TimeZone.ps1` for XMP-exif, XMP-tiff, IPTC fields
+ - **Geo discovery outputs (Wikidata/OSM)**: GeoJSON properties should include `Location`, `LocationType`, `City`, `StateProvince`, `Country`, `CountryCode`, `Radius`, and `LocationIdentifiers` (e.g., Wikidata URI or OSM URL)
 
 ### UTF-8 Handling
 Create args files as UTF-8 without BOM:
@@ -109,6 +112,7 @@ Prevents encoding issues with international character sets in metadata.
 
 ### External Data Files
 - **Geotagging**: CSV file with latitude/longitude data, header row optional
+ - **GeoJSON sources**: Output from `Get-NearbyWikidataLocations.ps1` and `Get-NearbyOSMLocations.ps1` can be used as `locations.geojson` for `Set-GeoTag.ps1`
 - **Lens data**: Can be embedded string or external file, format consistent with lens metadata standards
 - **Weather data**: CSV file with format `Date,Time,Temperature,Humidity,Pressure` (e.g., `11/17/2025,12:04 AM,25.2 °C,87 %,"1,013.24 hPa"`)
   - Auto-detects and skips header row if present
@@ -131,6 +135,9 @@ Prevents encoding issues with international character sets in metadata.
    - Solution: `Remove-NonNumeric` strips commas along with units, leaving `1013.24`
 9. **PowerShell 7+ requirements**: `Sync-PhotoTime.ps1` requires PS7+ for enhanced datetime handling
    - Check version: `$PSVersionTable.PSVersion.Major -ge 7`
+ 10. **GeoTag priority & defaults**:
+   - When an image point is inside a Polygon and a Point feature exists nearby, prioritize the Point if within its own radius (more specific tagging).
+   - If a feature's `Radius` property is missing or empty in GeoJSON, default to 50 meters.
 
 ## When Enhancing Scripts
 
@@ -150,3 +157,4 @@ Prevents encoding issues with international character sets in metadata.
   - How algorithms work (e.g., nearest-neighbor matching, time delta calculation)
   - What ranges and formats are expected (e.g., temperature ranges, date formats)
   - Edge cases handled (e.g., missing values, header detection, nullable fields)
+  - For discovery scripts (Wikidata/OSM): explain rate limiting (User-Agent), encoding/URI construction, and property mapping to GeoJSON compatible with `Set-GeoTag.ps1`.

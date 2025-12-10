@@ -14,8 +14,14 @@ ImagePS is a collection of PowerShell utilities designed to batch process image 
 - **Timezone Offset Correction** - Update datetime and timezone metadata across images
 - **Photo Time Synchronization** - Correct camera clock errors using reference images
 - **Geolocation Tagging** - Match GPS coordinates to locations and add location metadata
+  - Polygon support with point-in-polygon logic
+  - Priority of specific Point features over containing Polygons
+  - Default radius of 50m when missing in GeoJSON
 - **Lens Metadata** - Add Microsoft XMP lens information to files based on camera Make/Model/LensID
 - **Weather Annotation** - Tag images with weather data based on photo timestamp
+- **Nearby Location Discovery** - Generate GeoJSON from external sources
+  - Wikidata SPARQL (Get-NearbyWikidataLocations.ps1)
+  - OpenStreetMap Overpass API (Get-NearbyOSMLocations.ps1)
 
 ## Requirements
 
@@ -135,6 +141,10 @@ Matches GPS coordinates in image files to nearest locations from a locations dat
 - **Rule 2 (Nearby):** If within 500m but outside Radius, writes:
   - `MWG:City`, `MWG:State`, `MWG:Country`, `CountryCode`
 
+**Behavior Notes:**
+- When inside a Polygon feature, the script also checks for the nearest Point feature; if the Point is within its own radius, it takes priority over the Polygon (more specific tagging).
+- If a feature in `locations.geojson` does not include a `Radius` property or it is empty, the script uses a default of 50 meters.
+
 **Example:**
 ```powershell
 .\Set-GeoTag.ps1 -FilePath "C:\Photos" -Write
@@ -143,6 +153,45 @@ Matches GPS coordinates in image files to nearest locations from a locations dat
 **Dependencies:** Requires `locations.geojson` in script directory or target folder
 
 ---
+
+### Get-NearbyWikidataLocations.ps1
+
+Queries the Wikidata SPARQL endpoint for locations near a GPS coordinate and prints a clean, formatted list. Optionally exports a GeoJSON FeatureCollection compatible with `Set-GeoTag.ps1`.
+
+**Parameters:**
+- `-Latitude` (required): Decimal degrees
+- `-Longitude` (required): Decimal degrees
+- `-RadiusMeters` (required): Search radius in meters
+- `-Output` (optional): Path to GeoJSON file; omit for console-only
+
+**Example:**
+```powershell
+.\Get-NearbyWikidataLocations.ps1 -Latitude 18.4663 -Longitude -66.1057 -RadiusMeters 500 -Output wikidata.geojson
+```
+
+**GeoJSON Properties:**
+- `Location`, `LocationType`, `City`, `StateProvince`, `Country`, `CountryCode`, `Radius` (defaults to 50), `LocationIdentifiers` (Wikidata URI)
+
+---
+
+### Get-NearbyOSMLocations.ps1
+
+Queries OpenStreetMap via the Overpass API to find nearby POIs and prints a clean, formatted list. Optionally exports a GeoJSON FeatureCollection compatible with `Set-GeoTag.ps1`.
+
+**Parameters:**
+- `-Latitude` (required): Decimal degrees
+- `-Longitude` (required): Decimal degrees
+- `-RadiusMeters` (required): Search radius in meters
+- `-Output` (optional): Path to GeoJSON file; omit for console-only
+- `-FeatureTypes` (optional): Array of OSM tag keys to include (e.g., `"tourism"`, `"historic"`, `"amenity"`)
+
+**Example:**
+```powershell
+.\Get-NearbyOSMLocations.ps1 -Latitude 40.7589 -Longitude -73.9851 -RadiusMeters 300 -FeatureTypes "tourism","historic" -Output osm.geojson
+```
+
+**GeoJSON Properties:**
+- `Location`, `LocationType`, `City`, `StateProvince`, `Country`, `CountryCode`, `Radius` (defaults to 50), `LocationIdentifiers` (OSM URL), `OsmId`
 
 ### Set-Lens.ps1
 
@@ -199,6 +248,24 @@ Annotates images with weather data (temperature, humidity, pressure) by matching
 	```powershell
 	pwsh -File Set-Rights.ps1 -Name "Your Name" -FilePath "C:\Photos" -Recurse
 	```
+
+3. **Nearby discovery (Wikidata):**
+  ```powershell
+  # Console only
+  ./Get-NearbyWikidataLocations.ps1 -Latitude 18.4663 -Longitude -66.1057 -RadiusMeters 500
+
+  # Export to GeoJSON
+  ./Get-NearbyWikidataLocations.ps1 -Latitude 18.4663 -Longitude -66.1057 -RadiusMeters 500 -Output wikidata.geojson
+  ```
+
+4. **Nearby discovery (OpenStreetMap):**
+  ```powershell
+  # Console only
+  ./Get-NearbyOSMLocations.ps1 -Latitude 40.7589 -Longitude -73.9851 -RadiusMeters 300 -FeatureTypes "tourism","historic"
+
+  # Export to GeoJSON
+  ./Get-NearbyOSMLocations.ps1 -Latitude 40.7589 -Longitude -73.9851 -RadiusMeters 300 -FeatureTypes "tourism","historic" -Output osm.geojson
+  ```
 
 3. **Verify changes:**
 	```powershell
