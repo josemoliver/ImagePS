@@ -235,7 +235,6 @@ catch {
 # Each binding represents one location result from Wikidata
 
 Write-Host "Processing results..." -ForegroundColor Cyan
-Write-Host "Raw results count: $($response.results.bindings.Count)" -ForegroundColor Gray
 
 $locations = @()
 
@@ -358,13 +357,13 @@ $locations = $locations | Sort-Object -Property Distance
 # Display formatted list of locations with clean, professional layout
 
 Write-Host ""
-Write-Host "=" * 80 -ForegroundColor Cyan
+
 Write-Host "NEARBY WIKIDATA LOCATIONS" -ForegroundColor Cyan
-Write-Host "=" * 80 -ForegroundColor Cyan
+Write-Host "=========================" 
 Write-Host "Center Point: $Latitude, $Longitude" -ForegroundColor Gray
 Write-Host "Search Radius: $RadiusMeters meters" -ForegroundColor Gray
 Write-Host "Results Found: $($locations.Count)" -ForegroundColor Gray
-Write-Host "=" * 80 -ForegroundColor Cyan
+Write-Host ""
 Write-Host ""
 
 if ($locations.Count -eq 0) {

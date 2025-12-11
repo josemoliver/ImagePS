@@ -1,16 +1,19 @@
 <#
 .SYNOPSIS
-  Set_GeoTag.ps1 - Scan images, match nearest location from locations.geojson, and write MWG location tags via exiftool.
+  Set_GeoTag.ps1 - Scan images, match nearest location from a GeoJSON file, and write MWG location tags via exiftool.
 
 .PARAMETER FilePath
   Folder containing images to scan.
+
+.PARAMETER GeoJson
+  Path to the GeoJSON file containing location features (FeatureCollection). Accepts `.geojson` or `.json`.
 
 .PARAMETER Write
   If supplied, the script will write metadata. Otherwise, it performs a dry run.
 
 .DESCRIPTION
   For each image with GPSLatitude/GPSLongitude:
-    - Finds the nearest location from locations.geojson (GeoJSON format) using Haversine distance (meters).
+    - Finds the nearest location from the provided GeoJSON file (FeatureCollection) using Haversine distance (meters).
     - Rule 1: If within the location's Radius, writes MWG:Location, MWG:City, MWG:State, MWG:Country, CountryCode,
               and appends LocationIdentifiers to XMP-iptcExt:LocationCreated as LocationId.
     - Rule 2: If not within Radius but within 500 meters, writes MWG:City, MWG:State, MWG:Country, CountryCode.
@@ -36,6 +39,16 @@ param(
   })]
   [string] $FilePath,  # Directory containing images to geotag
 
+  [Parameter(Mandatory=$true)]
+  [ValidateScript({
+    # Validate path exists and extension is .geojson or .json
+    if (-not (Test-Path $_ -PathType Leaf)) { throw "GeoJson file '$_' does not exist." }
+    $ext = [System.IO.Path]::GetExtension($_).ToLower()
+    if (@('.geojson','.json') -notcontains $ext) { throw "GeoJson must be a .geojson or .json file." }
+    $true
+  })]
+  [string] $GeoJson,   # Path to GeoJSON FeatureCollection file
+
   [switch] $Write      # Enable write mode (default is dry-run/preview)
 )
 
@@ -51,22 +64,14 @@ function Test-ExifTool {
   }
 }
 
-# Locate locations.geojson file using fallback strategy
-# Search order: 1) Image folder, 2) Script directory
-# This allows per-folder location databases or a shared central database
+# Resolve and validate the provided GeoJSON path
+# Ensures the file exists and is accessible
 function Get-LocationsJsonPath {
-  param([string]$Folder)
-  
-  # Candidate 1: locations.geojson in the image folder (project-specific)
-  $candidate1 = Join-Path $Folder 'locations.geojson'
-  if (Test-Path $candidate1) { return $candidate1 }
-  
-  # Candidate 2: locations.geojson in the script directory (shared database)
-  $candidate2 = Join-Path (Split-Path $PSCommandPath) 'locations.geojson'
-  if (Test-Path $candidate2) { return $candidate2 }
-  
-  # No locations file found in either location
-  throw "locations.geojson not found in '$Folder' or script directory."
+  param([string]$Path)
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "GeoJson file not found: '$Path'"
+  }
+  return (Resolve-Path -LiteralPath $Path).Path
 }
 
 # Parse locations.geojson and extract location database
@@ -84,8 +89,11 @@ function Read-Locations {
     throw "Failed to read or parse GeoJSON: $($_.Exception.Message)"
   }
 
-  # Validate GeoJSON structure contains features array
-  if (-not $geojson -or -not $geojson.features -or $geojson.features.Count -eq 0) {
+  # Validate GeoJSON is a FeatureCollection with features
+  if (-not $geojson -or -not $geojson.type -or $geojson.type -ne 'FeatureCollection') {
+    throw "GeoJSON file must be a FeatureCollection."
+  }
+  if (-not $geojson.features -or $geojson.features.Count -eq 0) {
     throw "GeoJSON contains no features."
   }
 
@@ -180,8 +188,8 @@ function Read-Locations {
     }
 
     # Validate required fields are present
-    # LocationIdentifiers and Radius are optional (Radius defaults to 50m), all others are mandatory
-    foreach ($field in 'Location','Latitude','Longitude','City','StateProvince','Country') {
+    # Allow missing or empty Location, City, StateProvince, Country values; require coordinates only
+    foreach ($field in 'Latitude','Longitude') {
       if (-not $loc.$field) {
         throw "GeoJSON missing field '$field' in one or more features."
       }
@@ -492,41 +500,61 @@ function Write-MetadataRule1 {
     # IPTC IIM (Information Interchange Model) - original metadata standard from 1990s
     # Stored as ISO-8859-1 internally, ExifTool handles UTF-8 conversion
     # Widely supported by older software (Adobe Lightroom, Photo Mechanic)
-    $lines += @(
-        "-IPTC:Sub-location=$($Nearest.Location)",              # Specific location name
-        "-IPTC:City=$($Nearest.City)",                          # City name
-        "-IPTC:Province-State=$($Nearest.StateProv)",           # State/Province
-        "-IPTC:Country-PrimaryLocationName=$($Nearest.Country)",# Country name
-        "-IPTC:Country-PrimaryLocationCode=$($Nearest.CountryCode)" # ISO 3166-1 alpha-2
-    )
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.Location)) {
+      $lines += "-IPTC:Sub-location=$($Nearest.Location)"      # Specific location name
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.City)) {
+      $lines += "-IPTC:City=$($Nearest.City)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.StateProv)) {
+      $lines += "-IPTC:Province-State=$($Nearest.StateProv)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.Country)) {
+      $lines += "-IPTC:Country-PrimaryLocationName=$($Nearest.Country)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.CountryCode)) {
+      $lines += "-IPTC:Country-PrimaryLocationCode=$($Nearest.CountryCode)" # ISO 3166-1 alpha-2
+    }
 
     # ===== XMP IPTC CORE =====
     # XMP version of IPTC tags - modern metadata standard (2000s)
     # Stored in XML format, better Unicode support, extensible
-    $lines += @(
-        "-XMP-iptcCore:Location=$($Nearest.Location)",         # Specific location (sublocation)
-        "-XMP-iptcCore:CountryCode=$($Nearest.CountryCode)"    # ISO country code
-    )
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.Location)) {
+      $lines += "-XMP-iptcCore:Location=$($Nearest.Location)"  # Specific location (sublocation)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.CountryCode)) {
+      $lines += "-XMP-iptcCore:CountryCode=$($Nearest.CountryCode)"    # ISO country code
+    }
 
     # ===== XMP PHOTOSHOP =====
     # Adobe Photoshop-specific XMP namespace
     # Used by Adobe applications (Lightroom, Photoshop, Bridge)
-    $lines += @(
-        "-XMP-photoshop:City=$($Nearest.City)",
-        "-XMP-photoshop:State=$($Nearest.StateProv)",
-        "-XMP-photoshop:Country=$($Nearest.Country)"
-    )
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.City)) {
+      $lines += "-XMP-photoshop:City=$($Nearest.City)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.StateProv)) {
+      $lines += "-XMP-photoshop:State=$($Nearest.StateProv)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.Country)) {
+      $lines += "-XMP-photoshop:Country=$($Nearest.Country)"
+    }
 
     # ===== XMP IPTC EXTENSION =====
     # Extended IPTC metadata for more detailed location information
     # LocationCreated vs LocationShown: Created = where photo was taken, Shown = subject location
     # We use LocationCreated since we're tagging based on GPS coordinates (capture location)
-    $lines += @(
-        "-XMP-iptcExt:LocationCreatedSubLocation=$($Nearest.Location)",    # Specific location
-        "-XMP-iptcExt:LocationCreatedCity=$($Nearest.City)",              # City
-        "-XMP-iptcExt:LocationCreatedProvinceState=$($Nearest.StateProv)",# State/Province
-        "-XMP-iptcExt:LocationCreatedCountryName=$($Nearest.Country)"     # Country name
-    )
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.Location)) {
+      $lines += "-XMP-iptcExt:LocationCreatedSubLocation=$($Nearest.Location)"    # Specific location
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.City)) {
+      $lines += "-XMP-iptcExt:LocationCreatedCity=$($Nearest.City)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.StateProv)) {
+      $lines += "-XMP-iptcExt:LocationCreatedProvinceState=$($Nearest.StateProv)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.Country)) {
+      $lines += "-XMP-iptcExt:LocationCreatedCountryName=$($Nearest.Country)"
+    }
 
     # ===== LOCATION IDENTIFIERS (STRUCT) WITH DEDUPLICATION =====
     # LocationCreated can store array of LocationId structs for external references
@@ -639,32 +667,48 @@ function Write-MetadataRule2 {
     # ===== IPTC LEGACY TAGS =====
     # Write City/State/Country only (no Sub-location)
     # Rule 2: Less specific match, omit precise location name
-    $lines += @(
-        "-IPTC:City=$($Nearest.City)",
-        "-IPTC:Province-State=$($Nearest.StateProv)",
-        "-IPTC:Country-PrimaryLocationName=$($Nearest.Country)",
-        "-IPTC:Country-PrimaryLocationCode=$($Nearest.CountryCode)"
-    )
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.City)) {
+      $lines += "-IPTC:City=$($Nearest.City)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.StateProv)) {
+      $lines += "-IPTC:Province-State=$($Nearest.StateProv)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.Country)) {
+      $lines += "-IPTC:Country-PrimaryLocationName=$($Nearest.Country)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.CountryCode)) {
+      $lines += "-IPTC:Country-PrimaryLocationCode=$($Nearest.CountryCode)"
+    }
 
     # ===== XMP IPTC CORE =====
     # Write CountryCode only (no Location field)
-    $lines += "-XMP-iptcCore:CountryCode=$($Nearest.CountryCode)"
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.CountryCode)) {
+      $lines += "-XMP-iptcCore:CountryCode=$($Nearest.CountryCode)"
+    }
 
     # ===== XMP PHOTOSHOP =====
     # Write City/State/Country for Adobe compatibility
-    $lines += @(
-        "-XMP-photoshop:City=$($Nearest.City)",
-        "-XMP-photoshop:State=$($Nearest.StateProv)",
-        "-XMP-photoshop:Country=$($Nearest.Country)"
-    )
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.City)) {
+      $lines += "-XMP-photoshop:City=$($Nearest.City)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.StateProv)) {
+      $lines += "-XMP-photoshop:State=$($Nearest.StateProv)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.Country)) {
+      $lines += "-XMP-photoshop:Country=$($Nearest.Country)"
+    }
 
     # ===== XMP IPTC EXTENSION =====
     # Write City/State/Country only (no SubLocation or LocationIdentifiers)
-    $lines += @(
-        "-XMP-iptcExt:LocationCreatedCity=$($Nearest.City)",
-        "-XMP-iptcExt:LocationCreatedProvinceState=$($Nearest.StateProv)",
-        "-XMP-iptcExt:LocationCreatedCountryName=$($Nearest.Country)"
-    )
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.City)) {
+      $lines += "-XMP-iptcExt:LocationCreatedCity=$($Nearest.City)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.StateProv)) {
+      $lines += "-XMP-iptcExt:LocationCreatedProvinceState=$($Nearest.StateProv)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Nearest.Country)) {
+      $lines += "-XMP-iptcExt:LocationCreatedCountryName=$($Nearest.Country)"
+    }
 
     # Add target file path (must be last)
     $lines += $Path
@@ -687,8 +731,8 @@ try {
   # ===== INITIALIZATION =====
   # Validate prerequisites and load configuration
   Test-ExifTool                                      # Ensure ExifTool is available
-  $locPath = Get-LocationsJsonPath -Folder $FilePath # Find locations.geojson
-  $locations = Read-Locations -JsonPath $locPath     # Parse GeoJSON database
+  $locPath = Get-LocationsJsonPath -Path $GeoJson    # Resolve provided GeoJSON path
+  $locations = Read-Locations -JsonPath $locPath     # Parse and validate GeoJSON FeatureCollection
   $files = Get-ImageFiles -Folder $FilePath          # Discover all image files
 
   # ===== DISPLAY CONFIGURATION =====

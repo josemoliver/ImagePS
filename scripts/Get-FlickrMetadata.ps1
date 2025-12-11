@@ -293,6 +293,31 @@ try {
             $details = Get-FlickrPhotoDetails -PhotoId $photo.id `
                 -ApiKey $config.apiKey -ApiSecret $config.apiSecret
             
+            # Normalize dates
+            $uploadedFormatted = $null
+            if ($photo.dateupload) {
+                try {
+                    # Flickr dateupload is Unix epoch seconds
+                    $epoch = [long]$photo.dateupload
+                    $uploadedDt = [DateTimeOffset]::FromUnixTimeSeconds($epoch).LocalDateTime
+                    $uploadedFormatted = $uploadedDt.ToString("yyyy-MM-dd HH:mm:ss")
+                }
+                catch {
+                    $uploadedFormatted = $photo.dateupload
+                }
+            }
+
+            $takenFormatted = $null
+            if ($photo.datetaken) {
+                try {
+                    $takenDt = [datetime]::Parse($photo.datetaken)
+                    $takenFormatted = $takenDt.ToString("yyyy-MM-dd HH:mm:ss")
+                }
+                catch {
+                    $takenFormatted = $photo.datetaken
+                }
+            }
+
             # Build comprehensive metadata object
             $metadata = [ordered]@{
                 # Basic fields
@@ -301,8 +326,8 @@ try {
                 title          = $photo.title
                 description    = if ($details.info.description._content) { $details.info.description._content } else { "" }
                 tags           = $photo.tags
-                dateUploaded   = $photo.dateupload
-                dateTaken      = $photo.datetaken
+                dateUploaded   = $uploadedFormatted
+                dateTaken      = $takenFormatted
                 media          = $photo.media
                 
                 # Image URLs (all available sizes)
