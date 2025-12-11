@@ -128,10 +128,11 @@ Synchronizes photo timestamps across a collection by calculating the time differ
 
 ### Set-GeoTag.ps1
 
-Matches GPS coordinates in image files to nearest locations from a locations database and writes location metadata tags.
+Matches GPS coordinates in image files to nearest locations from a GeoJSON FeatureCollection and writes location metadata tags.
 
 **Parameters:**
 - `-FilePath` (required): Directory containing images with GPS data
+- `-GeoJson` (required): Path to a `.geojson` or `.json` GeoJSON file.
 - `-Write` (optional): Switch to enable writing metadata. Without this, performs a dry run
 
 **Matching Rules:**
@@ -142,15 +143,23 @@ Matches GPS coordinates in image files to nearest locations from a locations dat
   - `MWG:City`, `MWG:State`, `MWG:Country`, `CountryCode`
 
 **Behavior Notes:**
-- When inside a Polygon feature, the script also checks for the nearest Point feature; if the Point is within its own radius, it takes priority over the Polygon (more specific tagging).
-- If a feature in `locations.geojson` does not include a `Radius` property or it is empty, the script uses a default of 50 meters.
+- Polygon support with point-in-polygon detection. If inside a Polygon, a nearby Point within its own radius takes precedence (more specific).
+- Default `Radius` is 50 m when missing/empty.
+- Conditional writes: Location/Sublocation, City, StateProvince, Country, CountryCode are only written when values are non-empty (prevents blank tags).
+- Validation requires coordinates only (Latitude/Longitude). Location/City/StateProvince/Country may be missing.
+
+**Example Scenarios:**
+- Inside polygon and Point within radius: Point chosen; specific Location + identifiers written (Rule 1).
+- Inside overlapping polygons, no Point match: Nearest polygon centroid chosen; Location written if present (Rule 1).
+- Within 500 m but outside radius: General locality tags only, no Location (Rule 2).
+- Point within radius but Location empty: Rule 1 applies; Location omitted; City/State/Country/CountryCode written if present.
 
 **Example:**
 ```powershell
-.\Set-GeoTag.ps1 -FilePath "C:\Photos" -Write
+.\Set-GeoTag.ps1 -FilePath "C:\Photos" -GeoJson "C:\Data\locations.geojson" -Write
 ```
 
-**Dependencies:** Requires `locations.geojson` in script directory or target folder
+**Dependencies:** Provide path via `-GeoJson` to any `.geojson`/`.json` FeatureCollection file
 
 ---
 
@@ -284,7 +293,6 @@ Annotates images with weather data (temperature, humidity, pressure) by matching
   - `Set-Lens.ps1` with `-DryRun`
   - `Set-WeatherTags.ps1` (no `-Write` flag)
 - **External Data Files**: Some scripts require companion data files in the script directory:
-  - `Set-GeoTag.ps1` requires `locations.geojson`
   - `Set-Lens.ps1` requires `LensRules.json`
   - `Set-WeatherTags.ps1` requires `weatherhistory.csv`
 
@@ -297,7 +305,6 @@ Annotates images with weather data (temperature, humidity, pressure) by matching
 | "Invalid Timezone format" | Use format `±HH:MM` (e.g., `+02:00` or `-05:00`) |
 | No files processed | Check image file extensions match script filters (JPG, PNG, etc.) |
 | Changes not saved | Ensure ExifTool has write permissions to image directory |
-| "locations.geojson not found" | Ensure `locations.geojson` exists in script directory or target folder (required by `Set-GeoTag.ps1`) |
 | "LensRules.geojson not found" | Ensure `LensRules.geojson` exists in script directory (required by `Set-Lens.ps1`) |
 | "weatherhistory.csv not found" | Ensure `weatherhistory.csv` exists in target directory (required by `Set-WeatherTags.ps1`) |
 | GPS data not tagged | Verify images contain valid GPS coordinates (latitude/longitude) readable by ExifTool |

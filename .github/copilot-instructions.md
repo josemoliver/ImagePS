@@ -10,7 +10,7 @@ ImagePS is a PowerShell utility collection for automating photo metadata operati
 - **`Set-ImageUniqueID.ps1`**: Assigns random GUIDs (dashless format) to ImageUniqueID tag, skipping existing
 - **`Set-TimeZone.ps1`**: Updates timezone offset metadata across XMP and EXIF datetime fields
 - **`Sync-PhotoTime.ps1`**: Synchronizes photo timestamps using reference image and correct time (PowerShell 7+)
-- **`Set-GeoTag.ps1`**: Assigns GPS coordinates to images based on external CSV file lookup
+ - **`Set-GeoTag.ps1`**: Assigns GPS coordinates to images using a GeoJSON FeatureCollection provided via `-GeoJson`
 - **`Set-Lens.ps1`**: Injects lens metadata into images, supporting multiple lens formats
 - **`Set-WeatherTags.ps1`**: Tags images with weather data from CSV file using batch operations
  - **`Get-NearbyWikidataLocations.ps1`**: Discovers nearby locations from Wikidata (SPARQL) and exports GeoJSON compatible with `Set-GeoTag.ps1`
@@ -86,7 +86,7 @@ Use `-Recurse` switch consistently for batch operations.
 - **Conditional XMP/IPTC writes**: Check field existence with `exiftool -s -s -s -"FieldName"` before updating
   - Avoids creating unnecessary fields in files that don't have them
   - Used in `Sync-PhotoTime.ps1` and `Set-TimeZone.ps1` for XMP-exif, XMP-tiff, IPTC fields
- - **Geo discovery outputs (Wikidata/OSM)**: GeoJSON properties should include `Location`, `LocationType`, `City`, `StateProvince`, `Country`, `CountryCode`, `Radius`, and `LocationIdentifiers` (e.g., Wikidata URI or OSM URL)
+ - **Geo discovery outputs (Wikidata/OSM)**: GeoJSON properties should include `Location` (may be empty), `LocationType`, `City` (optional), `StateProvince` (optional), `Country` (optional), `CountryCode` (optional), `Radius` (defaults 50), and `LocationIdentifiers` (e.g., Wikidata URI or OSM URL)
 
 ### UTF-8 Handling
 Create args files as UTF-8 without BOM:
@@ -111,8 +111,8 @@ Prevents encoding issues with international character sets in metadata.
 - **Metadata preservation**: ExifTool preserves all metadata by default with `-overwrite_original`
 
 ### External Data Files
-- **Geotagging**: CSV file with latitude/longitude data, header row optional
- - **GeoJSON sources**: Output from `Get-NearbyWikidataLocations.ps1` and `Get-NearbyOSMLocations.ps1` can be used as `locations.geojson` for `Set-GeoTag.ps1`
+- **Geotagging**: Use a GeoJSON FeatureCollection file via `-GeoJson` (supports `.geojson` or `.json`, any filename)
+ - **GeoJSON sources**: Output from `Get-NearbyWikidataLocations.ps1` and `Get-NearbyOSMLocations.ps1` can be used directly with `Set-GeoTag.ps1`
 - **Lens data**: Can be embedded string or external file, format consistent with lens metadata standards
 - **Weather data**: CSV file with format `Date,Time,Temperature,Humidity,Pressure` (e.g., `11/17/2025,12:04 AM,25.2 °C,87 %,"1,013.24 hPa"`)
   - Auto-detects and skips header row if present
@@ -138,6 +138,8 @@ Prevents encoding issues with international character sets in metadata.
  10. **GeoTag priority & defaults**:
    - When an image point is inside a Polygon and a Point feature exists nearby, prioritize the Point if within its own radius (more specific tagging).
    - If a feature's `Radius` property is missing or empty in GeoJSON, default to 50 meters.
+   - If a Point within radius has empty `Location` but a containing Polygon has a non-empty `Location`, prefer the Polygon to avoid blank Location writes.
+   - Conditional writes: Only write Location/Sublocation, City, StateProvince, Country, CountryCode when values are non-empty.
 
 ## When Enhancing Scripts
 
