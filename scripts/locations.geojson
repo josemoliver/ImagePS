@@ -6,6 +6,7 @@
       "type": "Feature",
       "properties": {
         "Location": "Times Square",
+        "Type": "landmark",
         "City": "New York",
         "StateProvince": "New York",
         "Country": "United States",
@@ -28,6 +29,7 @@
       "type": "Feature",
       "properties": {
         "Location": "Central Park",
+        "Type":"park",
         "City": "New York",
         "StateProvince": "New York",
         "Country": "United States",
@@ -70,6 +72,7 @@
       "type": "Feature",
       "properties": {
         "Location": "Statue of Liberty",
+        "Type":"landmark",
         "City": "New York",
         "StateProvince": "New York",
         "Country": "United States",
@@ -114,6 +117,7 @@
       "type": "Feature",
       "properties": {
         "Location": "Brooklyn Bridge",
+        "Type:": "landmark",
         "City": "New York",
         "StateProvince": "New York",
         "Country": "United States",
@@ -136,6 +140,7 @@
       "type": "Feature",
       "properties": {
         "Location": "Rockefeller Center",
+        "Type":"landmark",
         "City": "New York",
         "StateProvince": "New York",
         "Country": "United States",
@@ -158,6 +163,7 @@
       "type": "Feature",
       "properties": {
         "Location": "One World Trade Center",
+        "Type":"landmark",
         "City": "New York",
         "StateProvince": "New York",
         "Country": "United States",
@@ -180,6 +186,7 @@
       "type": "Feature",
       "properties": {
         "Location": "Broadway Theater District",
+        "Type":"landmark",
         "City": "New York",
         "StateProvince": "New York",
         "Country": "United States",
@@ -202,6 +209,7 @@
       "type": "Feature",
       "properties": {
         "Location": "Grand Central Terminal",
+        "Type":"railway_station",
         "City": "New York",
         "StateProvince": "New York",
         "Country": "United States",
@@ -224,6 +232,7 @@
       "type": "Feature",
       "properties": {
         "Location": "Metropolitan Museum of Art",
+        "Type":"museum",
         "City": "New York",
         "StateProvince": "New York",
         "Country": "United States",

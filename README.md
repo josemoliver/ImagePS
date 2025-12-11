@@ -128,11 +128,11 @@ Synchronizes photo timestamps across a collection by calculating the time differ
 
 ### Set-GeoTag.ps1
 
-Matches GPS coordinates in image files to nearest locations from a GeoJSON FeatureCollection and writes location metadata tags.
+Matches GPS coordinates in image files to nearest locations from one or more GeoJSON FeatureCollections and writes location metadata tags.
 
 **Parameters:**
 - `-FilePath` (required): Directory containing images with GPS data
-- `-GeoJson` (required): Path to a `.geojson` or `.json` GeoJSON file.
+- `-GeoJson` (required): Path to a `.geojson`/`.json` file OR a folder containing one or more such files (recursively merged)
 - `-Write` (optional): Switch to enable writing metadata. Without this, performs a dry run
 
 **Matching Rules:**
@@ -141,25 +141,32 @@ Matches GPS coordinates in image files to nearest locations from a GeoJSON Featu
   - Appends LocationIdentifiers to `XMP-iptcExt:LocationCreated`
 - **Rule 2 (Nearby):** If within 500m but outside Radius, writes:
   - `MWG:City`, `MWG:State`, `MWG:Country`, `CountryCode`
+- **Rule 3 (Region Polygons):** If the image point lies inside a Polygon feature whose `properties.Type` is one of the configured RegionTypes (default: `city`, `state`, `admin_region`), then override the City/StateProvince/Country/CountryCode produced by Rule 1 or Rule 2 using the non-empty values from that region polygon.
 
 **Behavior Notes:**
 - Polygon support with point-in-polygon detection. If inside a Polygon, a nearby Point within its own radius takes precedence (more specific).
 - Default `Radius` is 50 m when missing/empty.
 - Conditional writes: Location/Sublocation, City, StateProvince, Country, CountryCode are only written when values are non-empty (prevents blank tags).
 - Validation requires coordinates only (Latitude/Longitude). Location/City/StateProvince/Country may be missing.
+- Multiple GeoJSON inputs: when `-GeoJson` is a folder, all `.geojson` and `.json` files are merged and processed together.
+- RegionTypes are configurable at the top of the script: `$RegionTypes = @('city','state','admin_region')`.
 
 **Example Scenarios:**
-- Inside polygon and Point within radius: Point chosen; specific Location + identifiers written (Rule 1).
-- Inside overlapping polygons, no Point match: Nearest polygon centroid chosen; Location written if present (Rule 1).
-- Within 500 m but outside radius: General locality tags only, no Location (Rule 2).
-- Point within radius but Location empty: Rule 1 applies; Location omitted; City/State/Country/CountryCode written if present.
+- Inside polygon and Point within radius: Point chosen; specific Location + identifiers written (Rule 1). If also inside a region polygon, the region can override City/State/Country/CountryCode (Rule 3).
+- Inside overlapping polygons, no Point match: Nearest polygon centroid chosen; Location written if present (Rule 1), then region overrides may apply (Rule 3).
+- Within 500 m but outside radius: General locality tags only, no Location (Rule 2); region overrides may still apply (Rule 3).
+- Point within radius but Location empty: Rule 1 applies; Location omitted; City/State/Country/CountryCode written if present; region overrides may apply.
 
-**Example:**
+**Examples:**
 ```powershell
+# Single GeoJSON file
 .\Set-GeoTag.ps1 -FilePath "C:\Photos" -GeoJson "C:\Data\locations.geojson" -Write
+
+# Folder with multiple GeoJSON/JSON files (recursive merge)
+.\Set-GeoTag.ps1 -FilePath "C:\Photos" -GeoJson "C:\Data\geo" -Write
 ```
 
-**Dependencies:** Provide path via `-GeoJson` to any `.geojson`/`.json` FeatureCollection file
+**Dependencies:** Provide path via `-GeoJson` to a `.geojson`/`.json` file or a folder containing such files
 
 ---
 

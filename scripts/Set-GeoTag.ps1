@@ -6,21 +6,23 @@
   Folder containing images to scan.
 
 .PARAMETER GeoJson
-  Path to the GeoJSON file containing location features (FeatureCollection). Accepts `.geojson` or `.json`.
+  Path to a GeoJSON file OR a folder containing one or more GeoJSON/JSON files with location features (FeatureCollection).
+  Accepts `.geojson` or `.json`. When a folder is provided, all matching files (recursively) are merged.
 
 .PARAMETER Write
   If supplied, the script will write metadata. Otherwise, it performs a dry run.
 
 .DESCRIPTION
-  For each image with GPSLatitude/GPSLongitude:
-    - Finds the nearest location from the provided GeoJSON file (FeatureCollection) using Haversine distance (meters).
-    - Rule 1: If within the location's Radius, writes MWG:Location, MWG:City, MWG:State, MWG:Country, CountryCode,
-              and appends LocationIdentifiers to XMP-iptcExt:LocationCreated as LocationId.
-    - Rule 2: If not within Radius but within 500 meters, writes MWG:City, MWG:State, MWG:Country, CountryCode.
-  If -Write is not provided, the script simulates and prints intended changes.
+For each image with GPSLatitude/GPSLongitude:
+Finds the closest GeoJSON feature (Point or Polygon centroid) using Haversine distance. If the GPS point lies inside a Polygon, its distance is treated as 0. A nearby Point within its own Radius is preferred over a containing Polygon.
+  - Rule 1 — Within Radius or Inside Polygon: write Location (if present), City, StateProvince, Country, CountryCode, and append LocationIdentifiers to XMP-iptcExt:LocationCreated as LocationId.
+  - Rule 2 — Nearby (≤ 500 m) but outside Radius: write City, StateProvince, Country, CountryCode (no Location or identifiers).
+  - Rule 3 — Region Polygons (override): if the GPS point lies inside a Polygon whose properties.Type matches any value in RegionTypes (default: city, state, admin_region), override City/StateProvince/Country/CountryCode from Rule 1/2 with the polygon’s non-empty values.
+
+  If -Write is not provided, the script previews intended changes without modifying files.
 
 .NOTES
-  Requires exiftool in PATH. Tested with ExifTool 12.x.
+  Requires exiftool in PATH. Tested with ExifTool 13.x.
 
 .LINK
   https://en.wikipedia.org/wiki/GeoJSON
@@ -41,16 +43,32 @@ param(
 
   [Parameter(Mandatory=$true)]
   [ValidateScript({
-    # Validate path exists and extension is .geojson or .json
-    if (-not (Test-Path $_ -PathType Leaf)) { throw "GeoJson file '$_' does not exist." }
-    $ext = [System.IO.Path]::GetExtension($_).ToLower()
-    if (@('.geojson','.json') -notcontains $ext) { throw "GeoJson must be a .geojson or .json file." }
-    $true
+    # Validate path exists and is either a file (.geojson/.json) or a directory containing such files
+    if (-not (Test-Path $_)) { throw "GeoJson path '$_' does not exist." }
+
+    if (Test-Path $_ -PathType Leaf) {
+      $ext = [System.IO.Path]::GetExtension($_).ToLower()
+      if (@('.geojson','.json') -notcontains $ext) { throw "GeoJson must be a .geojson or .json file when a file is provided." }
+      return $true
+    }
+
+    if (Test-Path $_ -PathType Container) {
+      $files = Get-ChildItem -LiteralPath $_ -Recurse -File -ErrorAction SilentlyContinue | Where-Object { @('.geojson','.json') -contains $_.Extension.ToLower() }
+      if (-not $files -or $files.Count -eq 0) { throw "GeoJson folder '$_' contains no .geojson or .json files." }
+      return $true
+    }
+
+    throw "GeoJson path '$_' is neither a file nor a directory."
   })]
-  [string] $GeoJson,   # Path to GeoJSON FeatureCollection file
+  [string] $GeoJson,   # Path to GeoJSON FeatureCollection file OR folder with multiple files
 
   [switch] $Write      # Enable write mode (default is dry-run/preview)
 )
+
+# ===== CONFIGURABLE REGION TYPES =====
+# Rule 3: Region Polygons will apply when a Polygon feature has a property 'Type' equal to one of these values.
+# Modify this list to customize which administrative region polygons can override City/State/Country/CountryCode.
+$RegionTypes = @('city','state','admin_region')
 
 # ===== HELPER FUNCTIONS =====
 # Modular functions for validation, GeoJSON parsing, GPS extraction, and distance calculations
@@ -66,12 +84,22 @@ function Test-ExifTool {
 
 # Resolve and validate the provided GeoJSON path
 # Ensures the file exists and is accessible
-function Get-LocationsJsonPath {
+function Get-LocationsJsonPaths {
   param([string]$Path)
-  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-    throw "GeoJson file not found: '$Path'"
+  if (-not (Test-Path -LiteralPath $Path)) {
+    throw "GeoJson path not found: '$Path'"
   }
-  return (Resolve-Path -LiteralPath $Path).Path
+  if (Test-Path -LiteralPath $Path -PathType Leaf) {
+    $ext = [System.IO.Path]::GetExtension($Path).ToLower()
+    if (@('.geojson','.json') -notcontains $ext) { throw "GeoJson file must be .geojson or .json: '$Path'" }
+    return @((Resolve-Path -LiteralPath $Path).Path)
+  }
+  if (Test-Path -LiteralPath $Path -PathType Container) {
+    $files = Get-ChildItem -LiteralPath $Path -Recurse -File -ErrorAction SilentlyContinue | Where-Object { @('.geojson','.json') -contains $_.Extension.ToLower() }
+    if (-not $files -or $files.Count -eq 0) { throw "GeoJson folder contains no .geojson or .json files: '$Path'" }
+    return $files | ForEach-Object { (Resolve-Path -LiteralPath $_.FullName).Path }
+  }
+  throw "GeoJson path '$Path' is invalid."
 }
 
 # Parse locations.geojson and extract location database
@@ -80,27 +108,28 @@ function Get-LocationsJsonPath {
 # Point features: Use coordinates directly
 # Polygon features: Calculate centroid for distance matching
 function Read-Locations {
-  param([string]$JsonPath)
-  
-  # Load and parse GeoJSON file
-  try {
-    $geojson = Get-Content -LiteralPath $JsonPath -Raw | ConvertFrom-Json
-  } catch {
-    throw "Failed to read or parse GeoJSON: $($_.Exception.Message)"
-  }
-
-  # Validate GeoJSON is a FeatureCollection with features
-  if (-not $geojson -or -not $geojson.type -or $geojson.type -ne 'FeatureCollection') {
-    throw "GeoJSON file must be a FeatureCollection."
-  }
-  if (-not $geojson.features -or $geojson.features.Count -eq 0) {
-    throw "GeoJSON contains no features."
-  }
+  param([string[]]$JsonPaths)
 
   $locations = @()
 
-  # Extract each feature as a location object
-  foreach ($feature in $geojson.features) {
+  foreach ($JsonPath in $JsonPaths) {
+    # Load and parse GeoJSON file
+    try {
+      $geojson = Get-Content -LiteralPath $JsonPath -Raw | ConvertFrom-Json
+    } catch {
+      throw "Failed to read or parse GeoJSON '$JsonPath': $($_.Exception.Message)"
+    }
+
+    # Validate GeoJSON is a FeatureCollection with features
+    if (-not $geojson -or -not $geojson.type -or $geojson.type -ne 'FeatureCollection') {
+      throw "GeoJSON file '$JsonPath' must be a FeatureCollection."
+    }
+    if (-not $geojson.features -or $geojson.features.Count -eq 0) {
+      continue
+    }
+
+    # Extract each feature as a location object
+    foreach ($feature in $geojson.features) {
     # Skip features missing geometry or properties
     if (-not $feature.geometry -or -not $feature.properties) {
       continue
@@ -108,6 +137,9 @@ function Read-Locations {
 
     $geomType = $feature.geometry.type
     $coords = $feature.geometry.coordinates
+      $typeProp = $feature.properties.Type
+      $typeNorm = $null
+      if ($typeProp) { $typeNorm = ([string]$typeProp).ToLowerInvariant() }
     
     # Initialize location coordinates
     $lat = $null
@@ -185,6 +217,7 @@ function Read-Locations {
       LocationIdentifiers = $feature.properties.LocationIdentifiers  # Optional array of identifiers (URLs, codes)
       GeometryType    = $geomType                           # 'Point' or 'Polygon'
       Polygon         = $polygon                            # Polygon coordinates (null for Point)
+      Type            = $typeNorm                           # Region type hint (e.g., 'city','state','admin_region')
     }
 
     # Validate required fields are present
@@ -198,6 +231,7 @@ function Read-Locations {
     $locations += $loc
   }
 
+  }
   return $locations
 }
 
@@ -235,11 +269,11 @@ function Get-ImageGps {
   # -gpslatitude, -gpslongitude: Only extract GPS fields (faster than reading all metadata)
   # -charset: UTF-8 encoding for international filenames and metadata
   # -q -q: Double quiet mode (suppress warnings and errors)
-  $args = @('-n','-j','-gpslatitude','-gpslongitude','-charset','filename=UTF8','-charset','EXIF=UTF8','-q','-q', $Path)
+  $etArgs = @('-n','-j','-gpslatitude','-gpslongitude','-charset','filename=UTF8','-charset','EXIF=UTF8','-q','-q', $Path)
   
   # Execute ExifTool and capture JSON output
   # 2>$null: Suppress stderr (tag not found messages)
-  $out = & exiftool @args 2>$null
+  $out = & exiftool @etArgs 2>$null
   if (-not $out) { return $null }
   
   # Parse JSON output
@@ -337,6 +371,45 @@ function Test-PointInPolygon {
   }
   
   return $inside
+}
+
+# Apply Rule 3: Region Polygons overrides
+# If the image point is inside any polygon whose 'Type' is one of $RegionTypes, override
+# City, StateProvince, Country, CountryCode on the nearest match using non-empty values from the region.
+function Apply-RegionOverrides {
+  param(
+    [double]$Lat,
+    [double]$Lon,
+    [object[]]$Locations,
+    [pscustomobject]$Nearest
+  )
+
+  $regionPolys = $Locations | Where-Object {
+    $_.GeometryType -eq 'Polygon' -and $_.Polygon -and $_.Type -and ($RegionTypes -contains $_.Type)
+  }
+
+  $containing = @()
+  foreach ($rp in $regionPolys) {
+    if (Test-PointInPolygon -Lat $Lat -Lon $Lon -Polygon $rp.Polygon) {
+      $dist = Get-DistanceMeters -Lat1 $Lat -Lon1 $Lon -Lat2 $rp.Latitude -Lon2 $rp.Longitude
+      $containing += [pscustomobject]@{ Region = $rp; CentroidDist = $dist }
+    }
+  }
+
+  if ($containing.Count -eq 0) { return $Nearest }
+
+  $chosen = $containing | Sort-Object -Property CentroidDist | Select-Object -First 1
+  $region = $chosen.Region
+
+  if (-not [string]::IsNullOrWhiteSpace($region.City)) { $Nearest.City = $region.City }
+  if (-not [string]::IsNullOrWhiteSpace($region.StateProvince)) { $Nearest.StateProv = $region.StateProvince }
+  if (-not [string]::IsNullOrWhiteSpace($region.Country)) { $Nearest.Country = $region.Country }
+  if (-not [string]::IsNullOrWhiteSpace($region.CountryCode)) { $Nearest.CountryCode = $region.CountryCode }
+
+  $Nearest | Add-Member -NotePropertyName RegionOverrideApplied -NotePropertyValue $true -Force
+  $Nearest | Add-Member -NotePropertyName RegionOverrideType -NotePropertyValue $region.Type -Force
+
+  return $Nearest
 }
 
 
@@ -731,14 +804,18 @@ try {
   # ===== INITIALIZATION =====
   # Validate prerequisites and load configuration
   Test-ExifTool                                      # Ensure ExifTool is available
-  $locPath = Get-LocationsJsonPath -Path $GeoJson    # Resolve provided GeoJSON path
-  $locations = Read-Locations -JsonPath $locPath     # Parse and validate GeoJSON FeatureCollection
+  $locPaths = Get-LocationsJsonPaths -Path $GeoJson  # Resolve provided GeoJSON path(s) (file or folder)
+  $locations = Read-Locations -JsonPaths $locPaths   # Parse and validate GeoJSON FeatureCollections (merged)
   $files = Get-ImageFiles -Folder $FilePath          # Discover all image files
 
   # ===== DISPLAY CONFIGURATION =====
   # Show user what will be processed
   Write-Host ("Scanning folder: {0}" -f (Resolve-Path $FilePath)) -ForegroundColor Cyan
-  Write-Host ("Locations file:  {0}" -f (Resolve-Path $locPath)) -ForegroundColor Cyan
+  if ($locPaths.Count -gt 1) {
+    Write-Host ("Locations files: {0} files" -f $locPaths.Count) -ForegroundColor Cyan
+  } else {
+    Write-Host ("Locations file:  {0}" -f (Resolve-Path $locPaths[0])) -ForegroundColor Cyan
+  }
   Write-Host ("Mode:            {0}" -f ($(if ($Write) {'WRITE'} else {'DRY-RUN'}))) -ForegroundColor Cyan
   Write-Host ("Files found:     {0}" -f $files.Count) -ForegroundColor Cyan
   Write-Host ""
@@ -771,6 +848,8 @@ try {
     # Calculate distances to all locations in database, find closest match
     $summary.WithGPS++
     $nearest = Find-NearestLocation -Lat $gps.Latitude -Lon $gps.Longitude -Locations $locations
+    # Rule 3: Apply region overrides if applicable
+    $nearest = Apply-RegionOverrides -Lat $gps.Latitude -Lon $gps.Longitude -Locations $locations -Nearest $nearest
     
     # Round distances for display (2 decimal places)
     $dist = [math]::Round($nearest.Distance, 2)
@@ -782,6 +861,9 @@ try {
     Write-Host ("       GPS: {0}, {1}" -f $gps.Latitude, $gps.Longitude)
     Write-Host ("       Nearest: {0} (City={1}, State={2}, Country={3})" -f $nearest.Location, $nearest.City, $nearest.StateProv, $nearest.Country)
     Write-Host ("       Geometry: {0} | Distance: {1} m | Radius: {2} m" -f $nearest.GeometryType, $dist, $radius)
+    if ($nearest.RegionOverrideApplied) {
+      Write-Host ("       Rule 3: Region override applied (type={0})" -f $nearest.RegionOverrideType) -ForegroundColor Green
+    }
 
     # ===== APPLY GEOTAGGING RULES =====
     # Two-tier matching strategy based on distance thresholds
