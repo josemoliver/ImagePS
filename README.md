@@ -70,6 +70,24 @@ Assigns random dashless GUIDs to the ImageUniqueID EXIF tag, skipping files that
 
 ---
 
+### Set-ImageAutoRotate.ps1
+
+Losslessly rotates and/or mirrors images based on the EXIF `Orientation` tag and then sets the tag to `1` (Horizontal / Normal). Uses `jpegtran` (libjpeg/libjpeg-turbo) for lossless JPEG transforms when available and `exiftool` for metadata inspection and updates. Skips files with missing Orientation or already set to `1`.
+
+**Parameters:**
+- `-Path` (required): Single file or directory to process
+- `-Recursive` (optional): Process subdirectories when `-Path` is a directory
+
+**Example:**
+```powershell
+.
+\Set-ImageAutoRotate.ps1 -Path "C:\Photos" -Recursive
+```
+
+**Notes:**
+- Requires `exiftool` in PATH. For lossless pixel transforms on JPEGs, install `jpegtran` (part of libjpeg-turbo). If `jpegtran` is not available the script will still update the EXIF `Orientation` tag to `1` but will not perform a pixel transform.
+
+
 ### Set-TimeZone.ps1
 
 Updates timezone offset metadata across EXIF and XMP datetime fields. Useful for correcting photos taken in different timezones.

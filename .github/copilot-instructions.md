@@ -6,18 +6,15 @@ ImagePS is a PowerShell utility collection for automating photo metadata operati
 ## Architecture & Components
 
 ### Core Scripts
-- **`Set-Rights.ps1`**: Sets MWG creator/copyright tags via ExifTool args file (UTF-8 without BOM)
-- **`Set-ImageUniqueID.ps1`**: Assigns random GUIDs (dashless format) to ImageUniqueID tag, skipping existing
-- **`Set-TimeZone.ps1`**: Updates timezone offset metadata across XMP and EXIF datetime fields
-- **`Sync-PhotoTime.ps1`**: Synchronizes photo timestamps using reference image and correct time (PowerShell 7+)
  - **`Set-GeoTag.ps1`**: Assigns GPS coordinates to images using one or more GeoJSON FeatureCollections provided via `-GeoJson` (file or folder)
+ - **`Set-ImageAutoRotate.ps1`**: Losslessly rotates/mirrors JPEGs based on EXIF `Orientation` and sets Orientation to `1` (uses `jpegtran` when available and `exiftool` for metadata)
 - **`Set-Lens.ps1`**: Injects lens metadata into images, supporting multiple lens formats
 - **`Set-WeatherTags.ps1`**: Tags images with weather data from CSV file using batch operations
  - **`Get-NearbyWikidataLocations.ps1`**: Discovers nearby locations from Wikidata (SPARQL) and exports GeoJSON compatible with `Set-GeoTag.ps1`
- - **`Get-NearbyOSMLocations.ps1`**: Discovers nearby locations from OpenStreetMap (Overpass API) and exports GeoJSON compatible with `Set-GeoTag.ps1`
 
-### Key Design Patterns
-
+### Lossless JPEG transforms
+- For lossless JPEG rotations/flips rely on command-line tools built on libjpeg/libjpeg-turbo such as `jpegtran` (recommended). These perform MCU-aligned transforms without re-encoding.
+- If `jpegtran` is available, scripts can shell out to it and then update EXIF Orientation with ExifTool. If it is missing, prefer updating the Orientation tag only (no pixel transform) to avoid lossy re-encoding in managed APIs.
 #### 1. **ExifTool Command Building**
 All scripts invoke ExifTool as external process. Key patterns:
 - Use `-overwrite_original` flag for in-place edits
