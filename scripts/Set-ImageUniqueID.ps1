@@ -125,7 +125,7 @@ try {
 
     # Helper function: Process accumulated batch of files
     # Reads ImageUniqueID from all files in batch using single ExifTool call
-    function Flush-Batch {
+    function Invoke-Batch {
         param($batchList)
         
         # Skip empty batches
@@ -197,14 +197,14 @@ try {
             # Flush batch when it reaches BatchSize
             # This triggers ExifTool to read ImageUniqueID for all files in batch
             if ($batch.Count -ge $BatchSize) {
-                Flush-Batch $batch
+                Invoke-Batch $batch
             }
         }
     }
     
     # ===== FLUSH FINAL BATCH =====
     # Process any remaining files that didn't reach BatchSize threshold
-    Flush-Batch $batch
+    Invoke-Batch $batch
 
     # Display scan results
     $needCount = $needWriteFiles.Count
