@@ -6,15 +6,18 @@ ImagePS is a PowerShell utility collection for automating photo metadata operati
 ## Architecture & Components
 
 ### Core Scripts
- - **`Set-GeoTag.ps1`**: Assigns GPS coordinates to images using one or more GeoJSON FeatureCollections provided via `-GeoJson` (file or folder)
- - **`Set-ImageAutoRotate.ps1`**: Losslessly rotates/mirrors JPEGs based on EXIF `Orientation` and sets Orientation to `1` (uses `jpegtran` when available and `exiftool` for metadata)
+- **`Set-Rights.ps1`**: Sets MWG creator/copyright tags via ExifTool args file (UTF-8 without BOM)
+- **`Set-ImageUniqueID.ps1`**: Assigns random GUIDs (dashless format) to ImageUniqueID tag, skipping existing
+- **`Set-TimeZone.ps1`**: Updates timezone offset metadata across XMP and EXIF datetime fields
+- **`Sync-PhotoTime.ps1`**: Synchronizes photo timestamps using reference image and correct time (PowerShell 7+)
+ - **`Set-GeoTag.ps1`**: Assigns GPS coordinates to images using a GeoJSON FeatureCollection provided via `-GeoJson`
 - **`Set-Lens.ps1`**: Injects lens metadata into images, supporting multiple lens formats
 - **`Set-WeatherTags.ps1`**: Tags images with weather data from CSV file using batch operations
  - **`Get-NearbyWikidataLocations.ps1`**: Discovers nearby locations from Wikidata (SPARQL) and exports GeoJSON compatible with `Set-GeoTag.ps1`
+ - **`Get-NearbyOSMLocations.ps1`**: Discovers nearby locations from OpenStreetMap (Overpass API) and exports GeoJSON compatible with `Set-GeoTag.ps1`
 
-### Lossless JPEG transforms
-- For lossless JPEG rotations/flips rely on command-line tools built on libjpeg/libjpeg-turbo such as `jpegtran` (recommended). These perform MCU-aligned transforms without re-encoding.
-- If `jpegtran` is available, scripts can shell out to it and then update EXIF Orientation with ExifTool. If it is missing, prefer updating the Orientation tag only (no pixel transform) to avoid lossy re-encoding in managed APIs.
+### Key Design Patterns
+
 #### 1. **ExifTool Command Building**
 All scripts invoke ExifTool as external process. Key patterns:
 - Use `-overwrite_original` flag for in-place edits
@@ -108,7 +111,7 @@ Prevents encoding issues with international character sets in metadata.
 - **Metadata preservation**: ExifTool preserves all metadata by default with `-overwrite_original`
 
 ### External Data Files
-- **Geotagging**: Use a GeoJSON FeatureCollection via `-GeoJson` — either a single file or a folder to merge all `.geojson`/`.json` files recursively.
+- **Geotagging**: Use a GeoJSON FeatureCollection file via `-GeoJson` (supports `.geojson` or `.json`, any filename)
  - **GeoJSON sources**: Output from `Get-NearbyWikidataLocations.ps1` and `Get-NearbyOSMLocations.ps1` can be used directly with `Set-GeoTag.ps1`
 - **Lens data**: Can be embedded string or external file, format consistent with lens metadata standards
 - **Weather data**: CSV file with format `Date,Time,Temperature,Humidity,Pressure` (e.g., `11/17/2025,12:04 AM,25.2 °C,87 %,"1,013.24 hPa"`)
@@ -137,7 +140,6 @@ Prevents encoding issues with international character sets in metadata.
    - If a feature's `Radius` property is missing or empty in GeoJSON, default to 50 meters.
    - If a Point within radius has empty `Location` but a containing Polygon has a non-empty `Location`, prefer the Polygon to avoid blank Location writes.
    - Conditional writes: Only write Location/Sublocation, City, StateProvince, Country, CountryCode when values are non-empty.
-   - Region overrides (Rule 3): If point lies inside a Polygon whose `properties.Type` is in `RegionTypes` (default `city`,`state`,`admin_region`), override City/StateProvince/Country/CountryCode produced by Rule 1/2 using non-empty values from the region polygon. `RegionTypes` is defined at the top of `Set-GeoTag.ps1` for easy customization.
 
 ## When Enhancing Scripts
 
