@@ -15,7 +15,10 @@
 
 .PARAMETER Filepath
     The directory path containing image files to process. Required parameter.
-    The script processes only JPG files in this directory (non-recursive).
+    The script processes supported image files in this directory.
+
+.PARAMETER Recurse
+    Process files recursively in subdirectories when specified.
 
 .EXAMPLE
     .\Set-TimeZone.ps1 -Timezone "+02:00" -Filepath "C:\Photos"
@@ -32,12 +35,17 @@
     
     Uses the local system timezone offset instead of specifying one explicitly.
 
+.EXAMPLE
+    .\Set-TimeZone.ps1 -Timezone "-04:00" -Filepath "C:\Photos" -Recurse
+
+    Processes supported image files in C:\Photos and all subdirectories.
+
 .NOTES
     - ExifTool must be installed and available in system PATH
     - Timezone format must match ±HH:MM (e.g., +02:00, -04:30, +00:00)
     - Range validation covers UTC-14 to UTC+14, matching real-world timezone offsets
     - Invalid timezone formats will cause the script to exit with error code 1
-    - Only JPG files (*.jpg) in the target directory are processed (non-recursive)
+    - Supports recursive processing with -Recurse
     - Updated metadata fields:
         * OffsetTime (all variants via wildcard OffsetTime*)
         * XMP-photoshop:DateCreated
@@ -57,7 +65,9 @@ param(
     [string]$Timezone = "",  # ISO 8601 offset format (±HH:MM), empty string triggers auto-detection
 
     [Parameter(Mandatory=$true)]
-    [string]$Filepath        # Directory containing images to process
+    [string]$Filepath,       # Directory containing images to process
+
+    [switch]$Recurse         # Process subdirectories recursively when specified
 )
 
 # ===== VALIDATION AND INITIALIZATION =====
@@ -125,10 +135,10 @@ $exts = @(
 )
 
 # Collect all matching files from target directory
-# Non-recursive: only processes files directly in Filepath, not subdirectories
+# Recursive when -Recurse is supplied
 $files = @()
 foreach ($pat in $exts) {
-    $files += Get-ChildItem -Path $Filepath -Filter $pat -File -ErrorAction SilentlyContinue
+    $files += Get-ChildItem -Path $Filepath -Filter $pat -File -Recurse:$Recurse.IsPresent -ErrorAction SilentlyContinue
 }
 
 # Remove duplicates (in case of case-insensitive filesystem collisions)
